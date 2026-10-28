@@ -177,6 +177,50 @@ void press_stamp(void), press_forget(void);
  * before a pause's mute; hciplayer reads it at the resume. */
 #define MUTE_FILE PEQ_ROOT "/tmp/q2mute"
 void mute_stamp(void);
+/* AirPlay (docs/internals.md#airplay-sender): the q2-airplay card app makes CAST_FILE, a cast_tap, whole
+ * under another name and renames it, and keeps it. While the app reads (want, its CAST_CLOCK, less than
+ * CAST_STALE old) hciplayer's filter puts what plays into ring[seq % CAST_RING] at CAST_RATE, 16-bit,
+ * then sets id, pts_ms and stamp, then seq; mute set, it also skips the EQ and silences the Q2's own
+ * output. A seek or a skip (not a song running into the next) sets jump_seq, then bumps jumps. demo
+ * writes its part each pass and the playing song's tags to CAST_TRACK; it reads the app's state and the
+ * speaker's place in the song, for the lyrics. The app (q2-airplay's tap.go) mirrors this layout. */
+#define CAST_FILE PEQ_ROOT "/tmp/q2cast"
+#define CAST_TRACK PEQ_ROOT "/tmp/q2cast.track"
+#define CAST_MAGIC 0x31544351u /* "QCT1" */
+#define CAST_RATE 44100
+#define CAST_RING 262144 /* a power of two: 5.9 s at CAST_RATE */
+#define CAST_CLOCK(ns) ((unsigned)((unsigned long long)(ns) >> 20)) /* 1.048576 ms ticks: no division */
+#define CAST_STALE 1430  /* 1.5 s of ticks: demo lets go first */
+#define CAST_STALE_PLAYER 1900 /* 2 s: then the filter, its output 500 ms behind in ALSA's buffer */
+enum { CAST_OFF, CAST_CONNECTING, CAST_ON };
+typedef struct {
+    unsigned magic, size;
+    /* the app's */
+    unsigned want;   /* CAST_CLOCK while it reads */
+    int mute;        /* the Q2's own output silent, its EQ skipped */
+    int state;       /* CAST_*, for demo */
+    int pos_ms;      /* the speaker's place in the song of filter instance pos_id, at pos_at (CAST_CLOCK) */
+    unsigned pos_id, pos_at;
+    int pos_run;     /* 1 while it plays on from there */
+    char speaker[64];
+    /* the filter's */
+    unsigned seq;    /* frames written */
+    unsigned id;     /* the filter instance (one a song) of the frame before seq */
+    int pts_ms;      /* that frame's place in its song */
+    unsigned jumps, jump_seq;
+    int dsd;         /* the song plays through untouched (DSD, DoP): nothing to send */
+    unsigned pad0;
+    long long stamp; /* CLOCK_MONOTONIC ns of the last write */
+    /* demo's */
+    unsigned beat;   /* bumped each pass */
+    int status;      /* mclGetPlayStatus: 1 stopped, 2 playing, 3 paused */
+    int volume, maxvol; /* volume: the speaker's (0-100) while one plays, else -1 */
+    unsigned track;  /* CAST_TRACK's writes */
+    unsigned pad1;
+    short ring[CAST_RING][2];
+} cast_tap;
+_Static_assert(__builtin_offsetof(cast_tap, stamp) == 128 && __builtin_offsetof(cast_tap, ring) == 160,
+               "q2-airplay's cast_tap layout");
 /* librespot (spotify.c) and its restart loop, whose pid its launcher left, stopped: Spotify's idle
  * stop and Home's Rockbox row, which lets ALSA go too. A q2video sink ends with librespot's pipe. */
 #define SPOT_OUT "/tmp/q2-librespot.out" /* the output for the card's aplay.sh, none on the DAC */
@@ -318,6 +362,10 @@ int addon_game_input(void *e), addon_is_game(const char *id);
 void ringnav_wdt_long(void); /* system.c: the watchdog's long count for a long pass */
 int ringnav_smart_awake(void); /* navigation.c: Smart Awake (IPOD KEEPLIT) is on */
 void library_poll(void); /* addon_library.c: an app's library update request, once per addon_poll */
+int addon_open_id(const char *id); /* a card app's page by its id, hidden or not; 0 when not on the card */
+/* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
+void airplay_poll(void), airplay_button(void *win), airplay_more(void *view);
+int airplay_on(void), airplay_lyrics(int *ms);
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);
 int spot_reply(char *buf, unsigned len, char **f, int max);

@@ -1062,6 +1062,12 @@ def quiet_icon(name, data):
                       '-extent', '28x28', *PNG_OUT, data=data)
 
 
+def red_glyph(data):
+    """A white glyph in the red the accent hook maps (play_fav's), its alpha kept."""
+    return imagemagick('png:-', '-channel', 'RGB', '-fill', '#FF0B00', '-colorize', '100', '+channel',
+                       *PNG_OUT, data=data)
+
+
 def branch(op, at, target):
     """op (beq, b, bal...) at address at, to target."""
     delta = (target - at - 4) // 4

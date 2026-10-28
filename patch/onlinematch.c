@@ -549,16 +549,25 @@ static int al_gone(void *ctx, void *event) {
 /* playermore_page_init: stock's PLAYMORE_COUNT rows (PLAYMORE_ROWS' kinds by position), then ours
  * under Download Cover & Lyrics, in stock's row widgets and 20 px label, and unnamed, so stock's
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
- * without stock's rows is left as it built it. */
+ * without stock's rows is left as it built it. The AirPlay row (airplay.c) goes over them all. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
+static void al_row(void *view);
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
     if (win) stock_more_speed(win), stock_more_into(win);
     void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
+    if (view && widget_count_children(view) == PLAYMORE_COUNT) {
+        al_row(view);
+        airplay_more(view); /* first, over stock's rows */
+    }
+    return result;
+}
+
+static void al_row(void *view) {
     unsigned at = 0;
-    if (!view || widget_count_children(view) != PLAYMORE_COUNT || !al_playing()) return result;
+    if (!al_playing()) return;
     while (at < PLAYMORE_COUNT && ((const int *)PLAYMORE_ROWS)[at] != PLAYMORE_SEARCH) ++at;
-    if (at == PLAYMORE_COUNT) return result;
+    if (at == PLAYMORE_COUNT) return;
     void *label = list_row(view, "player_onlinesearch", al_click, 0);
     widget_use_style(label, "s_scrlabel_white20l");
     widget_resize(label, 253, I(label, W_H));
@@ -566,7 +575,6 @@ int ringnav_playermore(void *win, void *ctx) {
     widget_on(label, EVT_DESTROY, al_gone, label);
     al.label = label;
     al_show();
-    return result;
 }
 
 /* The Cover Art Archive's 500 px front (a JPEG thumbnail) of release group id, as the archive.org URL

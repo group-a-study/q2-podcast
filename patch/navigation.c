@@ -4732,6 +4732,7 @@ int ringnav_playing(void *win, void *ctx) {
     np_fit_due((void *)0);
     np_sync(win);
     visualizer_attach(win);
+    airplay_button(win);
     return result;
 }
 
@@ -9517,11 +9518,14 @@ static int np_animating(void) {
                               (st.np_marquee && st.np_off > 0 && st.np_off < st.np_over)));
 }
 
-/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level. Smart Wi-Fi's own
- * toggles of the Wi-Fi switch save nothing (smart_config). */
+/* Keep stock VOLUME for wired/USB and boot; Bluetooth saves its own level, and so does an AirPlay
+ * speaker while it plays (airplay.c). Smart Wi-Fi's own toggles of the Wi-Fi switch save nothing
+ * (smart_config). */
 int ringnav_write_config(int value, const char *section, const char *key) {
     if (smart_config(section, key)) return 0;
-    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
+    if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && airplay_on())
+        section = "Q2POD", key = "AIRVOL";
+    else if (!tk_strcmp(section, "PLAYSET") && !tk_strcmp(key, "VOLUME") && mclGetOutputWay() == 1)
         key = "BT_VOLUME";
     return stock_write_config_trampoline(value, section, key);
 }
@@ -9701,6 +9705,7 @@ int ringnav_sleep(void *loop) {
     spot_poll();
     radio_poll();
     addon_poll();
+    airplay_poll();
     playback_poll();
     resume_poll();
     scrobble_auto();
