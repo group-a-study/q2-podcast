@@ -209,14 +209,15 @@ typedef struct {
     int pts_ms;      /* that frame's place in its song */
     unsigned jumps, jump_seq;
     int dsd;         /* the song plays through untouched (DSD, DoP): nothing to send */
-    unsigned pad0;
+    int spk;         /* the app's: the speaker's volume (0-100), as it said or the Q2 last set it */
     long long stamp; /* CLOCK_MONOTONIC ns of the last write */
     /* demo's */
     unsigned beat;   /* bumped each pass */
     int status;      /* mclGetPlayStatus: 1 stopped, 2 playing, 3 paused */
-    int volume, maxvol; /* volume: the speaker's (0-100) while one plays, else -1 */
+    int volume, maxvol; /* volume: the speaker's (0-100) while one plays, else -1 (also the filter's
+                         * mute until demo has the earphones' level back) */
     unsigned track;  /* CAST_TRACK's writes */
-    unsigned pad1;
+    unsigned spk_seq; /* the app's: bumped with each spk (0: an app that never says) */
     short ring[CAST_RING][2];
 } cast_tap;
 _Static_assert(__builtin_offsetof(cast_tap, stamp) == 128 && __builtin_offsetof(cast_tap, ring) == 160,
