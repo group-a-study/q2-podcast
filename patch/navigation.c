@@ -9280,6 +9280,15 @@ static void spot_keep(unsigned key, int sec, int total) {
     BLOB_IO(RESUME_FILE, st.spots, 1);
 }
 
+/* A card app's place in a song on the card (addon.c places_read: q2-pocket's, a podcast's place
+ * moved on another device), kept as if it had played there: the song starts there, as from its own
+ * place. Under RESUME_EDGE_S, 0 among them, it forgets the song's place. A song playing keeps its
+ * own: its next save (RESUME_SAVE_S, or a pause) puts it back. */
+void ringnav_place(const char *path, int sec) {
+    spot_at(0); /* the ring read first: spot_keep writes all of it */
+    spot_keep(fnv(FNV_SEED, (const unsigned char *)path), sec, 0x7fffffff);
+}
+
 /* Counts key's play and moves it first, so among equal counts the least recently played is the
  * one replaced when no slot is free. */
 static void play_count(void *r, unsigned key) {

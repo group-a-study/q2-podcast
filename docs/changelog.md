@@ -2,6 +2,7 @@
 
 - **1.7.4**:
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
+  - Card apps: an app can tell the Q2 where a podcast or book resumes, such as a podcast app bringing the place you reached on your phone. The episode then starts there when you play it, as from its own place.
 
 - **1.7.3**:
   - Standby: waking from Standby no longer shows TF card removed and inserted messages.

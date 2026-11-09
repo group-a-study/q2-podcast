@@ -15645,7 +15645,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'places'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -16490,6 +16490,26 @@ m=end_sleep(); m.play=1; m.poll(); names=m.poll(3500); assert not paused(names) 
 # A new request replaces the app's own: a time, then "end", pauses at the end only.
 m=end_sleep(b'until 86460\n'); assert not paused(m.poll(61000)) and not unlinked(m)
 m.playtime=224; m.poll(); m.word(O['MCL_POS'],1); m.playtime=0; assert paused(m.poll())==1; passed()
+
+# Places (q2-pocket's: a podcast's place moved on another device, addon.c places_read): an app's .places holds
+# "<seconds>\t<path>" lines, each kept in the resume ring as a played song's place (navigation.c ringnav_place),
+# then the file is removed. A place under RESUME_EDGE_S forgets the song's; a line cut short, without digits before
+# its tab, or whose path is off the card or climbs out of it, is passed over.
+class PocketMachine(PodMachine):
+    app,manifest='pocket','name=Pocket\nsearch=Search Podcasts\nqr=0\n'
+PLACES='/tmp/q2-pocket.places'
+EP1,EP2='/mnt/mmc/Podcasts/Show/2026-11-01 - One.mp3','/mnt/mmc/Podcasts/Show/2026-11-02 - Two.mp3'
+def ring_of(m): return [(k,signed(v)) for k,v in struct.iter_unpack('<II',bytes(m.files.get('/mnt/data/ringnav-resume',b''))) if k]
+def pocket(text):
+    m=PocketMachine(); m.unlinked=[]; m.open(); m.answer(*OK,[]); m.mock('unlink@GLIBC_2.0')
+    m.files[PLACES]=bytearray(text.encode()); m.poll(); return m
+m=pocket('300\t'+EP1+'\n4000\t'+EP2+'\n')
+assert ring_of(m)==[(fnv(EP2),4000),(fnv(EP1),300)] and m.unlinked==[PLACES],(ring_of(m),m.unlinked)
+m.files.pop(PLACES); m.poll(); assert m.unlinked==[PLACES]; passed()  # gone: nothing more read
+m.files[PLACES]=bytearray(('15\t'+EP1+'\n').encode()); m.poll()
+assert ring_of(m)==[(fnv(EP2),4000)],ring_of(m); passed()  # under RESUME_EDGE_S: forgotten
+m=pocket('x\t'+EP1+'\n90\t/etc/passwd\n90\t/mnt/mmc/../etc/x.mp3\n90'+EP1+'\n12345678\t'+EP1+'\n90\t'+EP2)
+assert ring_of(m)==[] and m.unlinked==[PLACES],ring_of(m); passed()
 
 # Deezer: q2-deezer from the card's .deezer folder. Nothing streams: a press downloads, to Deezer/ on
 # the card, and a song on the card, a local row, plays from it as local music (library_lists.c songs_open).
@@ -17363,6 +17383,10 @@ playing(m,1,n=3); assert m.seeks==[85] and m.places()[0][1]==85; passed()
 m=ResumeMachine(m.files); m.poll(0,pos=0,n=2); playing(m,2,n=1); assert m.seeks==[85]; passed()  # after a reboot
 m=ResumeMachine(m.files); m.poll(0,pos=0,n=2); playing(m,O['RESUME_START_S'],n=1); assert not m.seeks; passed()  # already under way
 m.poll(3590,n=3); m.poll(0,pos=1,n=2); assert not m.places(); passed()  # finished: forgotten
+# An app's place (ringnav_place, as addon.c's places_read hands it on): the song starts there.
+m=ResumeMachine(); r=m.items(m.get(syms['mcl_pdeqplaylist']))[0]; m.word(r+O['REC_PATH'],m.string('/p/app'))
+run(m,'ringnav_place',m.string('/p/app'),1234); assert m.places()==[(fnv('/p/app'),1234)]
+m.poll(0,pos=0,n=2); playing(m,1,n=3); assert m.seeks==[1234]; passed()
 m=ResumeMachine(); cue=m.items(m.get(syms['mcl_pdeqplaylist']))[0]; m.word(cue+O['REC_CUE_START'],1200)
 playing(m,0,pos=0,n=70); assert not m.places() and not m.renames; passed()
 m=ResumeMachine()
