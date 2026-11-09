@@ -1,7 +1,15 @@
 # Changelog
 
-- **1.7.7**:
+- **Q2 Podcast 1.7.4**:
+  - Q2 Podcast: this release is a fork of Q2 Pod made for podcasts and audiobooks.
+  - Podcasts and audiobooks: on an episode or a book, a press of **Next** skips 30 seconds on and **Previous** 15 seconds back. Hold **Next** for the next chapter, or **Previous** to go back to the start of this one, or to the one before if it has only just started. Without chapters, a hold goes to the next or previous episode. A headset's Next and Previous skip too.
+  - Now Playing: two more pages after the track's details. **Description** shows the episode's description, and **Chapters** lists its chapters, the one playing in white; tap one to go there.
+  - Now Playing: on a Pocket episode, the heart is the episode's star in Pocket Casts, once the **Pocket** app is signed in. Elsewhere it is My Fav, as before.
+  - App Store: **AirPlay**, **Apple Music** and **Pocket** are in the list. AirPlay plays what the Q2 plays on an AirPlay speaker.
+  - Network Update installs Q2 Podcast's releases.
   - Card apps: an app can tell the Q2 where a podcast or book resumes, such as a podcast app bringing the place you reached on your phone. The episode then starts there when you play it, as from its own place.
+
+- **1.7.7**:
   - App Store: **Add an App**, the last row, adds an app that isn't on the list from its GitHub repo. It shows a QR code: scan it with a phone on the same Wi-Fi, paste the repo's link and press **Add**. Once GitHub shows a release with the app's zip, the app gets a row in the App Store, and pressing it installs it. The phone's page also removes what you added.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.
