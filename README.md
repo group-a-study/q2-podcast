@@ -4,7 +4,7 @@ A fork of [Q2 Pod](https://github.com/DiamondBond/q2-pod) 1.7.4 for podcasts and
 
 - **Skip and chapters:** on an episode or a book, Next skips 30 seconds on and Previous 15 seconds back; hold one to jump between chapters.
 - **Description and Chapters** pages on Now Playing, after the track's details.
-- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, downloads Up Next for offline listening and cuts the ads; on its episodes, Now Playing's heart is the Pocket Casts star.
+- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, downloads Up Next for offline listening and cuts the ads; on its episodes, Now Playing's heart becomes the Pocket Casts star.
 - **AirPlay** in the App Store, to play what the Q2 plays on an AirPlay speaker.
 
 Install it as Q2 Pod's own instructions below say, with the update file from [this repository's releases](https://github.com/group-a-study/q2-podcast/releases/latest); **Network Update** then installs Q2 Podcast's releases. What changed is in the [changelog](docs/changelog.md). Q2 Pod's README follows.

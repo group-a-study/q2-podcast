@@ -246,13 +246,14 @@ static int starred(const char *path) {
     return strstr(pc.starred, line) != 0;
 }
 
-/* Now Playing's heart (ratings.c rate_tick and rate_bind): on a starrable track the star, back to
- * My Fav's once it plays another. */
+/* Now Playing's heart (ratings.c rate_tick and rate_bind): on a starrable track a star (the build's
+ * play_star and play_unstar, drawn as the hearts are), back to My Fav's heart once it plays
+ * another. */
 void podcast_heart(void *fav) {
     if (!fav) return;
     const char *path = starrable(), *img;
     if (path) {
-        img = starred(path) ? "play_fav" : "play_unfav";
+        img = starred(path) ? "play_star" : "play_unstar";
         pc.painted = 1;
     } else if (pc.painted) {
         unsigned at, n;
