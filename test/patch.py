@@ -17661,11 +17661,11 @@ m=ShelfMachine({LIST:bytearray((ROOT/'sources.list').read_bytes()),SPOT_TAG:byte
                 '/mnt/mmc/.spotify/run':bytearray(b'sh'),'/mnt/mmc/.spotify/librespot':bytearray(b'ELF')})
 m.rockbox_mode=0; m.wifi=-1; apps_open(m)
 BLANK=m.labels()[2]; assert BLANK in ('',' ')  # Check for Updates' blank detail: ' ' under a theme's separators
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']+EXTRA+ADD and not m.threads; passed()  # no themes without Rockbox; the card apps last
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install','Apple Music','Install','Bandcamp','Install','Pocket','Install']+EXTRA+ADD and not m.threads; passed()  # no themes without Rockbox; the card apps last
 m.close(); m.wifi=3; m.rockbox_mode=0o100755; m.dirs['/mnt/mmc/.spotify']=[]; apps_open(m)
-assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']+EXTRA+ADD
+assert m.labels()==['App Store','Check for Updates','Checking…','Rockbox','Update','Rockbox Themes','Install','Spotify','Installed','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install','Apple Music','Install','Bandcamp','Install','Pocket','Install']+EXTRA+ADD
 m.reply=(ROOT/'test/shelf/q2-librespot.json').read_bytes(); shelf_job(m)
-LAST=(manifest.get('extra_apps') or ['DiamondBond/q2-groovebox'])[-1].split(' ')[0]  # the last of the list, its extra's after it
+LAST=(manifest.get('extra_apps') or ['group-a-study/q2-pocket'])[-1].split(' ')[0]  # the last of the list, its extra's after it
 assert m.opts[10002]==f'https://api.github.com/repos/{LAST}/releases/latest' and m.opts[10018]=='Q2Pod'
 assert m.opts[10065]=='/etc/scrobble-ca.pem' and m.opts[64]==1 and m.opts[81]==2 and m.opts[20108]
 assert m.labels()[8]=='Update' and m.labels()[2]==BLANK and '/tmp/q2-shelf.json' not in m.files  # q2-v1.8 against the latest q2-v1.9
@@ -17687,7 +17687,7 @@ m.close(); m.wifi=3; m.now+=11*60*1000; apps_open(m); assert len(m.threads)==5
 m.row(2); assert m.toasts[-1][3]=='Stopped checking for updates'; shelf_job(m); assert len(m.threads)==5 and m.toasts[-1][3]=='Stopped checking for updates'; passed()
 m.close(); m.rockbox_mode=0; m.dirs.pop('/mnt/mmc/.spotify'); m.reply=(ROOT/'test/shelf/q2-rockbox.json').read_bytes()
 toasts=len(m.toasts); apps_open(m); shelf_job(m); assert len(m.toasts)==toasts  # the opening check: nothing to update, nothing said
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']+EXTRA+ADD  # not stopped: checked again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install','Apple Music','Install','Bandcamp','Install','Pocket','Install']+EXTRA+ADD  # not stopped: checked again
 m.row(1); assert m.labels()[4]=='Starts at power-on; Boot to changes that. Press again to install' and len(m.threads)==6
 m.row(1); assert len(m.threads)==7 and m.labels()[4]=='Checking…'; m.row(1); shelf_job(m); assert m.toasts[-1][3]=='Download cancelled'
 m.free=10<<20; m.row(1); m.row(1); shelf_job(m)  # the zip (13018581 bytes) and 64 MB left over
@@ -17701,7 +17701,7 @@ assert m.moves[-2:]==['/mnt/mmc/.q2/apps/rockbox.files','/mnt/mmc/.q2/apps/rockb
 assert m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2' and m.files['/mnt/mmc/.rockbox/fonts/a b.fnt']==b'f'
 assert m.files['/mnt/mmc/.q2/apps/rockbox.files']==b'.rockbox/rockbox\n.rockbox/codecs/flac.codec\n.rockbox/fonts/a b.fnt\n'
 assert not [f for f in m.files if '.q2/staging' in f] and 'sync' in m.systems; passed()
-assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install']+EXTRA+ADD; passed()  # the rows built again
+assert m.labels()==['App Store','Check for Updates',BLANK,'Rockbox','Installed','Rockbox Themes','Install','Spotify','Install','Deezer','Install','Soulseek','Install','File Browser','Install','Subsonic','Install','Podcasts','Install','Live Music Archive','Install','Buddy','Install','Groovebox','Install','AirPlay','Install','Apple Music','Install','Bandcamp','Install','Pocket','Install']+EXTRA+ADD; passed()  # the rows built again
 m.listing='        1  10-06-2026 13:18   .rockbox/../../x\n'; m.files.pop('/mnt/mmc/.q2/apps/rockbox.tag'); m.row(1); shelf_job(m)
 assert m.toasts[-1][3]=='The download is not a usable app' and m.files['/mnt/mmc/.rockbox/rockbox']==b'ELF3.2'; passed()
 m.close(); passed()
@@ -20350,7 +20350,7 @@ class ChapterMachine(CoverflowMachine):
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if not name.startswith('chapter:'): return super().hook(u,address,size,unused)
-        a=u.reg_read(REGS[0]); ret=0
+        a=u.reg_read(REGS[0]); ret=0; self.calls.append((name[8:],a))
         if name=='chapter:chapters_start':
             assert self.text(a)==self.path; ret=self.job
         elif name=='chapter:mp4_fits':
@@ -20436,6 +20436,89 @@ m=ChapterMachine(ready=False); m.open_chapters(); m.advance(50)
 f,ctx=m.handler(m.page,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.cancelled==1
 m.advance(50); assert m.freed==1 and not m.timers; passed()
+# Podcasts on Now Playing (podcast.c): on a spoken track a side button's press skips 15 s back or 30 s on,
+# and held (PC_HOLD_MS) it jumps between the file's chapters, read once through the same reader; stock
+# sees none of the press. A music track's side buttons stay stock's.
+PODCAST='/mnt/mmc/Podcasts/Show/2024-01-01 - Ep.mp3'
+def side_down(m,key): return m.call(key,address=HOOKS['on_wm_keydown_before_fun'][0],event_type=O['EVT_KEY_DOWN_BEFORE'],gap=0)
+def side(m,key,held=0):
+    down=side_down(m,key)
+    if held: m.advance(held,clear=False)
+    return down,m.call(key,gap=0,clear=False)
+def jumps(m): return [(c[0],c[1]) for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','player_next_music','player_prev_music','chapters_start')]
+def pc_poll(m): m.call(address=payload_syms['podcast_poll'],gap=0,clear=False)
+for key,to in ((O['KEY_FWD_BTN'],100),(O['KEY_BACK_BTN'],55)):
+    m=ChapterMachine(path=PODCAST); assert side(m,key)==(11,11) and jumps(m)==[('player_seek_time',to)],jumps(m); passed()
+m=ChapterMachine(path=PODCAST); m.playtime=5; assert side(m,O['KEY_BACK_BTN'])==(11,11) and jumps(m)==[('player_seek_time',0)]; passed()
+m=ChapterMachine(path=PODCAST); m.playtime=210; assert side(m,O['KEY_FWD_BTN'])==(11,11) and jumps(m)==[('player_seek_time',224)]; passed()  # the end: 225 long
+m=ChapterMachine(path=PODCAST); m.word(0xa3beac,3)  # paused: the seek waits for Play, and a second skip counts from the first
+assert side(m,O['KEY_FWD_BTN'])==(11,11) and jumps(m)==[('mclSetSeek',100)]
+assert side(m,O['KEY_FWD_BTN'])==(11,11) and jumps(m)==[('mclSetSeek',130)],jumps(m); passed()
+m=ChapterMachine(path='/mnt/mmc/Music/Song.mp3'); down,_=side(m,O['KEY_FWD_BTN'])
+assert down!=11 and not any(c[0] in ('player_seek_time','mclSetSeek') for c in m.calls); passed()
+m=ChapterMachine(path=PODCAST); m.word(0xa3beac,1); assert side_down(m,O['KEY_FWD_BTN'])!=11; passed()  # stopped: stock's
+# Held: the chapters are read (the press waits for them), then the next one; the release does nothing more.
+m=ChapterMachine(path=PODCAST); assert side_down(m,O['KEY_FWD_BTN'])==11
+m.advance(O['PC_HOLD_MS'],clear=False); assert [c[0] for c in jumps(m)]==['chapters_start']
+pc_poll(m); assert jumps(m)[1:]==[('player_seek_time',120)] and m.toasts[-1][3]=='日本語',jumps(m)
+assert m.call(O['KEY_FWD_BTN'],gap=0,clear=False)==11 and jumps(m)[1:]==[('player_seek_time',120)]; passed()
+for playtime,key,want in ((70,O['KEY_BACK_BTN'],('player_seek_time',60)),(61,O['KEY_BACK_BTN'],('player_seek_time',0)),
+                          (130,O['KEY_FWD_BTN'],('player_next_music',)),(1,O['KEY_BACK_BTN'],('player_prev_music',))):
+    m=ChapterMachine(path=PODCAST); m.playtime=playtime; side_down(m,key); m.advance(O['PC_HOLD_MS'],clear=False); pc_poll(m)
+    assert m.call(key,gap=0,clear=False)==11 and [j[:len(want)] for j in jumps(m) if j[0]!='chapters_start']==[want],(playtime,jumps(m)); passed()
+# Held a second time: the chapters read before, at once.
+m=ChapterMachine(path=PODCAST); side(m,O['KEY_FWD_BTN'],O['PC_HOLD_MS']); pc_poll(m); m.playtime=120
+assert side(m,O['KEY_BACK_BTN'],O['PC_HOLD_MS'])==(11,11) and jumps(m)[-1]==('player_seek_time',60),jumps(m); passed()
+# A slow loop (the screen off) brings the release past PC_HOLD_MS before the hold's timer: still a hold.
+m=ChapterMachine(path=PODCAST); side_down(m,O['KEY_FWD_BTN']); m.now+=O['PC_HOLD_MS']
+assert m.call(O['KEY_FWD_BTN'],gap=0,clear=False)==11 and [c[0] for c in jumps(m)]==['chapters_start']; passed()
+# Now Playing's heart on a Pocket episode: q2-pocket's starred list, not My Fav; a tap asks q2-pocket to
+# star it (/tmp/q2-star), and the heart shows what was asked until the list changes.
+m=RateMachine(); m.mock('strstr@GLIBC_2.0'); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]; m.word(r+O['REC_PATH'],m.string(PODCAST))
+m.stats['/tmp/q2-starred']=1; m.files['/tmp/q2-starred']=(PODCAST+'\n').encode()
+m.advance(500); assert m.nodes[m.fav]['image']=='play_fav'
+assert m.tap()==0 and m.files['/tmp/q2-star']==('0\t'+PODCAST+'\n').encode() and m.nodes[m.fav]['image']=='play_unfav'
+assert not any(c[0]=='fav_click' for c in m.calls) and m.toasts[-1][3]=='Star removed'
+m.advance(500); assert m.nodes[m.fav]['image']=='play_unfav'
+m.stats['/tmp/q2-starred']=2; m.files['/tmp/q2-starred']=('/mnt/mmc/Podcasts/Show/other.mp3\n'+PODCAST+'\n').encode()
+m.advance(500); assert m.nodes[m.fav]['image']=='play_fav'; passed()  # q2-pocket's answer
+m=RateMachine(); m.mock('strstr@GLIBC_2.0'); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]; m.word(r+O['REC_PATH'],m.string(PODCAST))
+m.advance(500); m.tap(); assert any(c[0]=='fav_click' for c in m.calls) and '/tmp/q2-star' not in m.files; passed()  # signed out: My Fav
+# Now Playing's Description and Chapters pages: after the art, lyrics and info pages, before the
+# visualizer, which stays last; each a view where the lyrics start, holding a scroll view.
+class PagesMachine(FileMocks,ChapterMachine):
+    def __init__(self,files=None,**kw):
+        super().__init__(**kw); self.file_mocks('pg:',files)
+    def hook(self,u,address,size,unused):
+        name=self.handlers.get(address,'')
+        if not name.startswith('pg:'): return super().hook(u,address,size,unused)
+        name=name[3:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.calls.append((name,a,b,c)); self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+    def np(self):
+        init=HOOKS['playing_page_init'][0]; self.handlers[init+12]='stock_playing'
+        lrc=self.node('view','view_lrc'); self.word(lrc+O['W_Y'],40)
+        self.slide=self.node('slide_view','slide_view',[self.node('view','view_album'),lrc,self.node('view','view_info')])
+        self.word(self.slide+O['W_W'],375); self.word(self.slide+O['W_H'],226)
+        box=self.node('view','slide_view_view',[self.slide])
+        self.win=self.node('window','playing_page',[box,self.node('slider','slider_play',max=225,value=100)])
+        for w,parent in ((lrc,self.slide),(self.slide,box),(box,self.win),(self.win,self.wm)): self.word(w+O['W_PARENT'],parent)
+        self.top=self.win; self.call(address=init,args=(self.win,7,0,0),gap=0)
+        return self.nodes[self.slide]['children']
+    def scroll(self,i): return self.nodes[self.nodes[self.slide]['children'][i]]['children'][0]
+    def texts_in(self,w): return [self.nodes[c].get('text') for c in self.nodes[w]['children']]
+DESC='/mnt/mmc/Podcasts/Show/.description/2024-01-01 - Ep.txt'
+m=PagesMachine({DESC:'Hello.\n\nAn episode about 日本語.'.encode()},path=PODCAST); pages=m.np()
+assert len(pages)==6 and m.nodes[pages[3]]['type']=='view' and m.get(pages[3]+O['W_Y'])==40 and m.nodes[pages[-1]]['type']=='list_item'
+assert m.nodes[m.scroll(3)]['type']=='scroll_view' and m.nodes[m.scroll(3)]['yslidable']==1 and m.nodes[m.scroll(3)]['xslidable']==0
+pc_poll(m); assert m.texts_in(m.scroll(3))==['Hello.\n\nAn episode about 日本語.'] and m.texts_in(m.scroll(4))==['Reading chapters…']
+m.advance(O['PC_HOLD_MS']*3); pc_poll(m); assert [c[0] for c in m.calls if c[0]=='chapters_start']==['chapters_start']
+m.advance(500); pc_poll(m)
+rows=m.nodes[m.scroll(4)]['children']; assert [m.texts_in(r) for r in rows]==[['Opening','0:00'],['Chapter 2','1:00'],['日本語','2:00']]
+assert [m.nodes[m.nodes[r]['children'][0]]['style:normal:text_color'] for r in rows]==[-0x555556,-1,-0x555556]  # 70 s: the second, white
+f,ctx=m.handler(rows[2],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
+assert jumps(m)==[('player_seek_time',120)]; passed()
+m=PagesMachine(path='/mnt/mmc/Music/Song.mp3'); m.np(); pc_poll(m)
+assert m.texts_in(m.scroll(3))==['No description'] and m.texts_in(m.scroll(4))==['No chapters'] and not any(c[0]=='chapters_start' for c in m.calls); passed()
+# PODCAST-END
 
 # Centre/wheel and touch reach the same guarded row handler.
 for touch in (False,True):

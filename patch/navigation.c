@@ -93,7 +93,6 @@ void ringnav_timezone_row(void *item, int i) {
 }
 static int library_music __attribute__((section(".scratch")));
 static int library_first __attribute__((section(".scratch")));
-static int spoken(const char *path);
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
 __asm__(".globl child_exit\nchild_exit:\nli $v0, 4001\nsyscall\n");
@@ -4786,6 +4785,7 @@ int ringnav_playing(void *win, void *ctx) {
      * once after the open. Fit from the file's own length at open if that shows. */
     np_fit_due((void *)0);
     np_sync(win);
+    podcast_attach(win); /* before the visualizer, which stays the last page */
     visualizer_attach(win);
     airplay_button(win);
     return result;
@@ -8251,24 +8251,42 @@ static int chapter_file(void *r) {
     if (ext && !strcasecmp(ext, ".m4b")) return 1;
     return spoken(path) && !I(r, REC_CUE_START) && !I(r, REC_CUE_END);
 }
+/* A seek to the playing track's second to, as a scrub ends (scrub_end): Now Playing's bar and
+ * clock go there at once and a paused track stays paused. The Chapters page's pick and podcast.c's
+ * skips. */
+void np_seek(int to) {
+    unsigned at, n;
+    void *r = queue_now(&at, &n);
+    if (!r) return;
+    /* Suppress even a resume poll that has not yet settled this track. */
+    st.ch_key = listen_key(r);
+    st.rs_pending = 0;
+    st.rs_go_key = 0;
+    st.scrub_track = np_track();
+    st.scrub_to = to;
+    st.scrub = st.scrub_moved = 1;
+    if (st.np_win) playing_timer_clear(st.np_win);
+    if (st.np_slider) widget_set_prop_int(st.np_slider, "value", to);
+    if (st.np_elapsed) clock_text(st.np_elapsed, 0, to);
+    scrub_end();
+}
+
+/* The playing track's second, a paused seek still waiting for Play (scrub_end's held_sec) taken as
+ * done; -1 for none. */
+int np_second(void) {
+    int sec = -1, total = 0;
+    if (player_playtime_and_length(&sec, &total) < 0) return -1;
+    if (st.held_sec && st.held_sec == sec + 1 && np_track() == st.scrub_track &&
+        mclGetPlayStatus() == 3)
+        return st.scrub_to;
+    return sec;
+}
+
 static int chapter_pick(void *ctx, void *event) {
     unsigned i = (unsigned)(long)ctx;
     if (st.ch && st.ch->done && !st.ch->failed && i < (unsigned)st.ch->count &&
-        np_track() == st.ch_track && (mclGetPlayStatus() == 2 || mclGetPlayStatus() == 3)) {
-        /* Suppress even a resume poll that has not yet settled this track. */
-        unsigned at, n;
-        void *r = queue_now(&at, &n);
-        st.ch_key = listen_key(r);
-        st.rs_pending = 0;
-        st.rs_go_key = 0;
-        st.scrub_track = st.ch_track;
-        st.scrub_to = st.ch->rows[i].sec;
-        st.scrub = st.scrub_moved = 1;
-        if (st.np_win) playing_timer_clear(st.np_win);
-        if (st.np_slider) widget_set_prop_int(st.np_slider, "value", st.scrub_to);
-        if (st.np_elapsed) clock_text(st.np_elapsed, 0, st.scrub_to);
-        scrub_end();
-    }
+        np_track() == st.ch_track && (mclGetPlayStatus() == 2 || mclGetPlayStatus() == 3))
+        np_seek(st.ch->rows[i].sec);
     navigator_back();
     return 0;
 }
@@ -8501,8 +8519,9 @@ int folder_videos(void) {
     return tk_str_start_with(p, "/mnt/mmc/") && media_kind(p + 9) == VIDEOS;
 }
 
-/* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. */
-static int spoken(const char *path) {
+/* A track in Podcasts or Audiobooks: always resumed, never counted or scrobbled. Shared with
+ * podcast.c. */
+int spoken(const char *path) {
     const char *ext = path ? strrchr(path, '.') : 0;
     return (ext && !strcasecmp(ext, ".m4b")) ||
            (path && tk_str_start_with(path, "/mnt/mmc/") && media_kind(path + 9) - 1u < AUDIOBOOKS);
@@ -9260,6 +9279,7 @@ static void quick_poll(void) {
  * Play Next (un_hold), the release latched as the queue menu's. */
 int ringnav_keylong(void *ctx, void *event) {
     if (event && ple_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
+    if (event && podcast_key((unsigned)I(event, EVENT_KEY), 3)) return STOP;
     if (!event || I(event, EVENT_KEY) != KEY_PLAY) return stock_keylong_trampoline(ctx, event);
     void *top = window_manager_get_top_window(window_manager());
     const char *fav = radio_hold(top);
@@ -9786,6 +9806,7 @@ int ringnav_sleep(void *loop) {
     keep_lit_poll();
     info_poll();
     np_art_poll();
+    podcast_poll();
     if ((st.np_slide && widget_get_prop_int(st.np_slide, "value", 0)) || /* off the art page */
         (st.rate_on && classic_pages()))                                 /* over the picker */
         *(volatile signed char *)BC_IDLE = BC_IDLE_FULL;
@@ -10107,6 +10128,7 @@ int ringnav_keydown(void *ctx, void *event) {
     if (st.tone_key) g_keytone_flag = 0;
     int result = stock_keydown_trampoline(ctx, event);
     if (st.tone_key) g_keytone_flag = tone;
+    if (!result && podcast_key(key, 1)) return STOP; /* after stock's lock */
     /* Coverflow moves on release; stop the press before it navigates the focused list below. */
     if (!result && (key == KEY_PREV || key == KEY_NEXT) && top &&
         !tk_strcmp(widget_get_prop_str(top, "name", ""), "coverflow_page"))
@@ -10930,6 +10952,7 @@ int ringnav(void *ctx, void *event) {
     }
     unsigned key = (unsigned)I(event, EVENT_KEY);
     if (ple_key(key, 2)) return STOP;
+    if (podcast_key(key, 2)) return STOP; /* a press ringnav_keydown took */
     /* This release's press was silenced by ringnav_keydown: a row change below clicks instead. */
     int owned = st.tone_key == key;
     st.tone_key = 0;

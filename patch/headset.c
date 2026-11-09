@@ -122,6 +122,8 @@ void media_key(unsigned key) {
         spot_media(key);
     else if (key == KEY_PLAY)
         player_play_pause();
+    else if (podcast_media(key)) /* a spoken track: a skip */
+        return;
     else if (key == KEY_FWD_BTN)
         player_next_music();
     else if (key == KEY_BACK_BTN)

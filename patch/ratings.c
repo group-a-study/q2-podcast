@@ -132,7 +132,10 @@ static void rate_badge(void) {
 }
 
 static int rate_tick(const void *unused) {
-    if (g_backlight_status) rate_badge();
+    if (g_backlight_status) {
+        podcast_heart(ra.rate_fav);
+        rate_badge();
+    }
     return 8; /* RET_REPEAT */
 }
 
@@ -321,6 +324,7 @@ static int rate_fav_click(void *ctx, void *event) {
         ra.rate_held = 0;
         return 0;
     }
+    if (podcast_star(ra.rate_fav)) return 0; /* a Pocket episode's star */
     FAV_CLICK(ctx, event);
     ratings_copy_due();
     void *r = rate_track();
@@ -363,6 +367,7 @@ void rate_bind(void *win) {
     ra.rate_shown = 0;
     widget_on(win, EVT_DESTROY, rate_gone, win);
     ra.rate_tick = timer_add(rate_tick, (void *)0, 500);
+    podcast_heart(fav);
     rate_badge();
 }
 
