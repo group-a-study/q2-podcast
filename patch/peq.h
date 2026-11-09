@@ -432,6 +432,7 @@ void spot_yield(void), spot_stop(void), radio_stop(void);
 void headset_volume_reset(void);
 void headset_poll(void), headset_eq_poll(void), headset_manual(void);
 int media_owner(void), media_playing(void), media_focused(void);
+int podcast_media(unsigned key); /* podcast.c: a headset's skip on a spoken track */
 void media_set_playing(int playing), media_key(unsigned key);
 void video_key(unsigned key);
 int radio_media(unsigned key), spot_media(unsigned key);

@@ -796,3 +796,9 @@ static inline int arc_out(int r, int y) {
 #define VIS_FLOOR_DB 60
 #define VIS_VU_REF_DB -14
 #define VIS_LED_DB -1
+
+/* podcast.c: a side button held this long on a spoken track jumps a chapter (Play/Pause's and
+ * Return's KEY_HOLD_MS); pressed, it skips SKIP_BACK_S back or SKIP_FWD_S on. */
+#define PC_HOLD_MS 700
+#define SKIP_BACK_S 15
+#define SKIP_FWD_S 30

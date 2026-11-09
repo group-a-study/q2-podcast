@@ -566,4 +566,16 @@ int ple_key(unsigned key, int phase);
 int pl_first(menu_t *m, int cur);
 void pl_fit(void *button);
 
+/* podcast.c: the side buttons on a spoken track (ringnav_keydown, ringnav, ringnav_keylong), Now
+ * Playing's Description and Chapters pages and the poll filling them, and the heart as Pocket
+ * Casts' star (ratings.c). navigation.c's spoken track, its seek and its second for them. */
+int podcast_key(unsigned key, int phase);
+void podcast_attach(void *win);
+void podcast_poll(void);
+void podcast_heart(void *fav);
+int podcast_star(void *fav);
+int spoken(const char *path);
+void np_seek(int to);
+int np_second(void);
+
 #endif

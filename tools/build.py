@@ -1049,6 +1049,7 @@ FUNCTIONS = {
  'widget_to_local': ('int', 'void *, void *'),
  'widget_dispatch_event_to_target_recursive': ('int', 'void *, void *'),
  'label_create': ('void *', 'void *, int, int, int, int'),
+ 'label_resize_to_content': ('int', 'void *, unsigned, unsigned, unsigned, unsigned'),
  'stock_search': ('int', 'void *, void *'),
  'widget_set_children_layout': ('int', 'void *, const char *'),
  'widget_get_canvas': ('void *', 'void *'),  # the lyrics page measures its lines (lyrics.c)
@@ -1420,7 +1421,7 @@ FLAGS = ['--target=mipsel-linux-gnu','-march=mips32r2','-mabi=32','-mfp64',
          '-fno-stack-protector','-fno-unwind-tables','-fno-asynchronous-unwind-tables',
          '-Oz','-Wall','-Wextra','-Werror','-Wno-unused-parameter']
 # navigation.c and the files split out of it (patch/navigation.h), each its own object, linked in this order.
-NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c']
+NAVIGATION = ['navigation.c', 'theme_engine.c', 'playlists.c', 'classic_pages.c', 'home.c', 'np_bar.c', 'volume.c', 'smart_wifi.c', 'system.c', 'tags.c', 'scrobble_ui.c', 'library_lists.c', 'ratings.c', 'scan_folders.c', 'podcast.c']
 
 def compile_payload(out):  # pragma: no mutate block
     """Compile and link the payload."""
