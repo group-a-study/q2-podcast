@@ -1,6 +1,12 @@
 # Changelog
 
 - **1.7.4**:
+  - Q2 Podcast: this release is a fork of Q2 Pod made for podcasts and audiobooks.
+  - Podcasts and audiobooks: on an episode or a book, a press of **Next** skips 30 seconds on and **Previous** 15 seconds back. Hold **Next** for the next chapter, or **Previous** to go back to the start of this one, or to the one before if it has only just started. Without chapters, a hold goes to the next or previous episode. A headset's Next and Previous skip too.
+  - Now Playing: two more pages after the track's details. **Description** shows the episode's description, and **Chapters** lists its chapters, the one playing in white; tap one to go there.
+  - Now Playing: on a Pocket episode, the heart is the episode's star in Pocket Casts, once the **Pocket** app is signed in. Elsewhere it is My Fav, as before.
+  - App Store: **AirPlay**, **Apple Music** and **Pocket** are in the list. AirPlay plays what the Q2 plays on an AirPlay speaker.
+  - Network Update installs Q2 Podcast's releases.
   - Library: in **Scan Folders**, tapping a folder that has no folders inside ticks it. It used to say **Folder not found**.
   - Card apps: an app can tell the Q2 where a podcast or book resumes, such as a podcast app bringing the place you reached on your phone. The episode then starts there when you play it, as from its own place.
 
