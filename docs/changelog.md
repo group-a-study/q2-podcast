@@ -1,6 +1,7 @@
 # Changelog
 
 - **1.7.7**:
+  - Card apps: an app can tell the Q2 where a podcast or book resumes, such as a podcast app bringing the place you reached on your phone. The episode then starts there when you play it, as from its own place.
   - App Store: **Add an App**, the last row, adds an app that isn't on the list from its GitHub repo. It shows a QR code: scan it with a phone on the same Wi-Fi, paste the repo's link and press **Add**. Once GitHub shows a release with the app's zip, the app gets a row in the App Store, and pressing it installs it. The phone's page also removes what you added.
   - View Queue: under **Theme: Classic** the song playing is in the same font as the rows around it. It used to be larger and lighter than the rest, with a wide gap after its ▶.
   - Display: in **Appearance**, **Status Bar** is now the row under **Theme**, as it picks a theme's look for the bar. It used to sit under **Battery**.

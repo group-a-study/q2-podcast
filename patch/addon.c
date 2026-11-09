@@ -32,6 +32,10 @@
  * An app's /tmp/q2-<id>.sleep asks for a sleep timer: playback pauses at a time, or as the track
  * playing ends (sleep_read, sleep_check).
  *
+ * An app's /tmp/q2-<id>.places puts places in songs on the card in the resume ring, as if they had
+ * played there, so each starts there (places_read: q2-pocket's, a podcast's place moved on another
+ * device).
+ *
  * A card game (q2app game=1, then no run or Streaming row) is a row in Library's Games instead:
  * it runs over the whole screen, as Videos' player does, until it exits (addon_game_start). One
  * with audio=1 as well owns the sound: the player is stopped and the headphone output readied
@@ -82,7 +86,8 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort"
+    "playlist progress pages library goto sleep game audio sections art window urls sort places"
+#define PLACES_MAX 4096 /* an app's .places read this far: some dozen songs' places */
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
 #define SWIPE_PX 60       /* and this far at the lift, more than up or down, changes section */
@@ -612,6 +617,29 @@ static void sleep_check(void) {
     }
 }
 
+/* An app's .places: "<seconds>\t<card path>" lines, each put in the resume ring
+ * (navigation.c ringnav_place), then the file removed. A line with no newline after it (a file cut at
+ * PLACES_MAX), no digits before its tab, or a path off the card or with a ".." in it, is passed
+ * over. */
+static void places_read(app_t *a) {
+    char path[48];
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.places", a->id);
+    if (access(path, 0)) return;
+    char *raw = calloc(1, PLACES_MAX + 2); /* state_read's leading newline, and its nul */
+    if (raw && state_read(path, raw, PLACES_MAX + 2))
+        for (char *line = raw + 1, *end; (end = strstr(line, "\n")); line = end + 1) {
+            *end = 0;
+            char *tab = strstr(line, "\t");
+            int sec = 0, k = 0;
+            for (; tab && line + k < tab && k < 7 && line[k] >= '0' && line[k] <= '9'; ++k)
+                sec = sec * 10 + (line[k] - '0');
+            if (tab && k && line + k == tab && tk_str_start_with(tab + 1, CARD "/") && !dotdot(tab + 1))
+                ringnav_place(tab + 1, sec);
+        }
+    free(raw);
+    unlink(path);
+}
+
 /* ringnav_sleep, every UI loop pass, paced to ADDON_POLL_MS once its row started it: standby and
  * auto power-off held while the app asks (hold=1), as Spotify's poll does while it plays; the
  * screen still turns off. An app that stopped by itself (idle, or from the phone) is let go, and
@@ -638,6 +666,7 @@ static void poll_one(app_t *a) {
     if (a->hold) reset_poweroptions_timer(1, 1, 0); /* standby, auto power-off; not the screen's */
     stream_poll(a);
     sleep_read(a);
+    places_read(a);
     if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) a->launched = a->hold = 0;
 }
 
