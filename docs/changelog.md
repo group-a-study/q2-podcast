@@ -1,5 +1,9 @@
 # Changelog
 
+- **Q2 Podcast 1.7.5**:
+  - Now Playing: on a Pocket episode the heart is drawn as a star, as Pocket Casts has it: filled when the episode is starred. Other tracks keep the heart.
+  - App Store: **Pocket** installs, now that its first release is out.
+
 - **Q2 Podcast 1.7.4**:
   - Q2 Podcast: this release is a fork of Q2 Pod made for podcasts and audiobooks.
   - Podcasts and audiobooks: on an episode or a book, a press of **Next** skips 30 seconds on and **Previous** 15 seconds back. Hold **Next** for the next chapter, or **Previous** to go back to the start of this one, or to the one before if it has only just started. Without chapters, a hold goes to the next or previous episode. A headset's Next and Previous skip too.

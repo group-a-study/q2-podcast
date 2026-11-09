@@ -2011,6 +2011,9 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # Now Playing's AirPlay button while a speaker plays (airplay.c): stock's glyph in the heart's
     # red, which the accent maps as it does the heart's
     icons['airplay_on.png'] = ('airplay.png', red_glyph(cat(xx+'airplay.png')))
+    # Now Playing's heart as a Pocket episode's star (podcast.c): the hearts' 28 px, their ink and baseline
+    for n in ('play_star.png', 'play_unstar.png'):
+        icons[n] = ('play_order.png', (ROOT/'assets/icons'/n).read_bytes())
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []
     from art import images as theme_images

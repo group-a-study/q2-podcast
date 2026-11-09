@@ -348,6 +348,9 @@ def validate_assets(directory):
         assert changed[xx+name] == dict(original_sha256=sha(old), sha256=sha(new))
         if not isinstance(size, tuple):  # transparent corners, not black, over a selected row
             assert imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=new) == b'0', name
+    for name in ('play_star.png', 'play_unstar.png'):  # podcast.c's star, the hearts' 28 px
+        star = read('rootfs.squashfs', xx+name)
+        assert star == (ROOT/'assets/icons'/name).read_bytes() and png_header(star) == (28, 28, 8, 6), name
     games = read('rootfs.squashfs', xx+'local_games.png')
     assert games == (ROOT/'assets/icons/local_games.png').read_bytes()
     assert png_header(games) == (52, 52, 8, 6)

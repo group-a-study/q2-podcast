@@ -115,13 +115,13 @@ static void np_image(void *w, const char *glyph) {
         widget_invalidate_force(w, (void *)0);
     }
 }
-/* The badge on an empty heart: the playing track's 1-4 hearts, hidden for none and on a full heart
- * (My Fav, whatever was kept before). */
+/* The badge on an empty heart: the playing track's 1-4 hearts, hidden for none, on a full heart
+ * (My Fav, whatever was kept before) and on podcast.c's star. */
 static void rate_badge(void) {
     if (!ra.rate_badge) return;
     void *r = rate_track();
     int n = r ? rate_kept(0, listen_key(r)) : 0;
-    if (n && !tk_strcmp(widget_get_prop_str(ra.rate_fav, "image", ""), "play_fav")) n = 0;
+    if (n && tk_strcmp(widget_get_prop_str(ra.rate_fav, "image", ""), "play_unfav")) n = 0;
     /* each set repaints the badge, and this runs every 500 ms: only a change (AWTK's "text" is
      * a wide string widget_get_prop_str doesn't read) */
     if (ra.rate_shown == n + 1) return;

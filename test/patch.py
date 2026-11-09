@@ -20472,16 +20472,18 @@ assert side(m,O['KEY_BACK_BTN'],O['PC_HOLD_MS'])==(11,11) and jumps(m)[-1]==('pl
 # A slow loop (the screen off) brings the release past PC_HOLD_MS before the hold's timer: still a hold.
 m=ChapterMachine(path=PODCAST); side_down(m,O['KEY_FWD_BTN']); m.now+=O['PC_HOLD_MS']
 assert m.call(O['KEY_FWD_BTN'],gap=0,clear=False)==11 and [c[0] for c in jumps(m)]==['chapters_start']; passed()
-# Now Playing's heart on a Pocket episode: q2-pocket's starred list, not My Fav; a tap asks q2-pocket to
-# star it (/tmp/q2-star), and the heart shows what was asked until the list changes.
+# Now Playing's heart on a Pocket episode is a star: q2-pocket's starred list, not My Fav; a tap asks
+# q2-pocket to star it (/tmp/q2-star), and the star shows what was asked until the list changes. Another
+# track gets My Fav's heart back.
 m=RateMachine(); m.mock('strstr@GLIBC_2.0'); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]; m.word(r+O['REC_PATH'],m.string(PODCAST))
 m.stats['/tmp/q2-starred']=1; m.files['/tmp/q2-starred']=(PODCAST+'\n').encode()
-m.advance(500); assert m.nodes[m.fav]['image']=='play_fav'
-assert m.tap()==0 and m.files['/tmp/q2-star']==('0\t'+PODCAST+'\n').encode() and m.nodes[m.fav]['image']=='play_unfav'
+m.advance(500); assert m.nodes[m.fav]['image']=='play_star'
+assert m.tap()==0 and m.files['/tmp/q2-star']==('0\t'+PODCAST+'\n').encode() and m.nodes[m.fav]['image']=='play_unstar'
 assert not any(c[0]=='fav_click' for c in m.calls) and m.toasts[-1][3]=='Star removed'
-m.advance(500); assert m.nodes[m.fav]['image']=='play_unfav'
+m.advance(500); assert m.nodes[m.fav]['image']=='play_unstar'
 m.stats['/tmp/q2-starred']=2; m.files['/tmp/q2-starred']=('/mnt/mmc/Podcasts/Show/other.mp3\n'+PODCAST+'\n').encode()
-m.advance(500); assert m.nodes[m.fav]['image']=='play_fav'; passed()  # q2-pocket's answer
+m.advance(500); assert m.nodes[m.fav]['image']=='play_star'  # q2-pocket's answer
+m.word(r+O['REC_PATH'],m.string('/p/B')); m.advance(500); assert m.nodes[m.fav]['image']=='play_unfav'; passed()  # a song: My Fav's heart
 m=RateMachine(); m.mock('strstr@GLIBC_2.0'); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]; m.word(r+O['REC_PATH'],m.string(PODCAST))
 m.advance(500); m.tap(); assert any(c[0]=='fav_click' for c in m.calls) and '/tmp/q2-star' not in m.files; passed()  # signed out: My Fav
 # Now Playing's Description and Chapters pages: after the art, lyrics and info pages, before the
