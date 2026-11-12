@@ -495,7 +495,9 @@ int ringnav_fwupdate(void *win, void *ctx) {
 #define SH_JSON "/tmp/q2-shelf.json"
 #define SH_LOOKUP_JSON "/tmp/q2-shelf-phone.json" /* shelf_lookup's, beside a job's */
 #define SH_LIST SH_DIR "/sources.list" /* the last list fetched, for the page offline */
-#define SH_LIST_URL "https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list"
+/* Q2 Podcast's own list (group-a-study/q2-podcast): Q2 Pod's apps, and AirPlay, Apple Music,
+ * Bandcamp and Pocket */
+#define SH_LIST_URL "https://raw.githubusercontent.com/group-a-study/q2-podcast/main/sources.list"
 #define SH_RESERVE (64ull << 20) /* left free on the card beyond a download or what it unpacks */
 #define SH_STALE_MS (10 * 60 * 1000ull)
 #define SH_RECHECK_MS (60 * 1000ull) /* Check for Updates' least gap: an API request per app */
