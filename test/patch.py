@@ -3824,7 +3824,7 @@ def playing_menu(**kw):
 for state in (3,2):  # paused and playing both expose the same actions
     m=playing_menu(); m.handlers.pop(syms['mclGetPlayStatus'],None); m.word(0xa3beac,state)
     m.press(5000); assert m.release()==1
-    m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:]+["Shuffle","Repeat","Group by: Album"]
+    m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:]+["Shuffle","Repeat","Group by: Album","Skip Back: 5 s","Skip Forward: 30 s"]
     assert m.nodes[m.title]['text']=='B' and m.release()==0
     m.press(7000); assert m.release()==1 and m.get(0xa3beac)==state; passed()
 # A tagged song's menu is titled by its tag, not its file name.
@@ -3832,7 +3832,7 @@ m=playing_menu(); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_TITL
 m.press(6000); assert m.hold()==11 and m.nodes[m.title]['text']=='Bee'; passed()
 # A song in a hidden folder isn't in the Library: no Go to rows, unless its app's q2app has goto=1 (addon_goes).
 m=playing_menu(); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_PATH'],m.string('/mnt/mmc/.podcasts/Show/B.mp3'))
-m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:4]+["Shuffle","Repeat","Group by: Album"],m.labels(); passed()
+m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:4]+["Shuffle","Repeat","Group by: Album","Skip Back: 5 s","Skip Forward: 30 s"],m.labels(); passed()
 # A folder play's untagged record: the player's parsed title once it has parsed that file.
 m=playing_menu(); id3=syms['g_play_id3_info']; m.u.mem_write(id3,b'/p/B\0'); m.u.mem_write(id3+O['ID3_TITLE'],b'Parsed\0')
 m.press(6000); assert m.hold()==11 and m.nodes[m.title]['text']=='Parsed'; passed()
@@ -8781,48 +8781,29 @@ class AlbumLyricsMachine(CoverflowMachine):
         assert self.call(address=HOOKS['playermore_page_init'][0],args=(self.top,0,0,0),gap=0)==0
         assert self.calls[0][:2]==('stock_playermore',self.top)
         return self.nodes[view]['children']
-m=AlbumLyricsMachine(); kids=m.more(); row=kids[4]
-assert len(kids)==10 and [k for k in kids if k not in (row,kids[0])]==m.stock and m.nodes[row]['style']=='s_listitem_black'
-air=m.nodes[m.nodes[kids[0]]['children'][0]]['children']
-assert m.nodes[air[0]]['image']=='airplay' and m.nodes[air[1]]['text']=='AirPlay'
-button=m.nodes[row]['children'][0]; icon,label=m.nodes[button]['children']
-assert m.nodes[button]['style']=='s_btn_listitem' and not m.nodes[button].get('name')
-assert [m.get(button+O[k]) for k in ('W_X','W_Y','W_W','W_H')]==[20,0,335,70]
-assert m.nodes[icon]['image']=='player_onlinesearch' and [m.get(icon+O[k]) for k in ('W_X','W_W','W_H')]==[10,52,70]
-assert m.nodes[label]['style']=='s_scrlabel_white20l' and m.nodes[label]['text']=='Download Album Lyrics'
-assert [m.get(label+O[k]) for k in ('W_X','W_W','W_H')]==[72,253,70]; passed()
-m=AlbumLyricsMachine(cls=0xf1); assert len(m.more())==9; passed()  # an online queue: AirPlay's row alone
-for off,v in (('REC_TYPE',4),('REC_ALBUM',0),('REC_PATH',0)):  # a folder, no album tag, no path
-    m=AlbumLyricsMachine(); m.word(m.playing()+O[off],v); assert len(m.more())==9,off; passed()
-m=AlbumLyricsMachine(); m.word(m.playing()+O['REC_PATH'],m.string('http://x/y')); assert len(m.more())==9; passed()
+# Q2 Podcast (the user's, 2026-11-12): podcast.c podcast_more replaces the album lyrics row. Stock's Download
+# Cover & Lyrics (kind 4, third) and Look up Artist (kind 6, fifth) go; Look up Album (kind 5) reads Look up
+# Podcast, its button keeping the name stock's click reads; the skip lengths' rows follow; AirPlay's row first.
+def podcast_more_page():
+    m=AlbumLyricsMachine(); stock=[]
+    for i,text in enumerate(['Queue','Add to Playlist','Download Cover & Lyrics','Look up Album','Look up Artist',
+                             'Delete Song','A-B Repeat','Multiple Speed']):
+        label=m.node('hscroll_label',text=text)
+        stock.append(m.node('list_item',children=[m.node('button',str(i),[label])]))
+    view=m.node('scroll_view','scroll_view_more',list(stock)); m.top=m.node('window','playermore_page',[view])
+    assert m.call(address=HOOKS['playermore_page_init'][0],args=(m.top,0,0,0),gap=0)==0
+    return m,m.nodes[view]['children'],stock
+def row_text(m,w):
+    for c in m.nodes[w].get('children',()):
+        t=m.nodes[c].get('text') if m.nodes[c]['type'] in ('hscroll_label','label') else row_text(m,c)
+        if t: return t
+    return None
+m,kids,stock=podcast_more_page()
+assert [row_text(m,k) for k in kids]==['AirPlay','Queue','Add to Playlist','Look up Podcast','Delete Song','A-B Repeat',
+                                        'Multiple Speed','Skip Back: 5 s','Skip Forward: 30 s'],[row_text(m,k) for k in kids]
+assert m.nodes[stock[2]].get('destroyed') and m.nodes[stock[4]].get('destroyed') and kids[3]==stock[3]
+assert m.nodes[m.nodes[stock[3]]['children'][0]]['name']=='3'; passed()
 m=AlbumLyricsMachine(); assert len(m.more(7))==7; passed()  # not stock's rows: left as they are
-def album_lyrics_page(**queue):
-    m=AlbumLyricsMachine(**queue); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
-    cue=m.song('Cue'); m.word(cue+O['REC_CUE_END'],90)
-    m.found=[m.song('T1'),cue,m.song('T2')]
-    def press():
-        f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
-    return m,label,press
-m,label,press=album_lyrics_page()
-m.wifi=-1; press(); assert m.toasts[-1][3]=='Connect to Wi-Fi first' and not m.threads; m.wifi=3
-press(); assert len(m.threads)==1 and m.nodes[label]['text']=='Downloading 1 of 2'
-worker,arg=m.threads[-1]; press(); assert len(m.threads)==1  # a second press: cancelling, no second job
-assert m.nodes[label]['text']=='Cancelling…'; passed()
-m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]
-m.advance(500,clear=False); assert ('reset_poweroptions_timer',1,1,0) in [c[:4] for c in m.calls] and m.nodes[label]['text']=='Downloading 1 of 2'
-f,ctx=m.handler(label,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)  # the page closes: the job goes on
-m.missing=False; assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0
-assert m.accessed==['/p/T1','/p/T1.lrc','/p/T2','/p/T2.lrc'],m.accessed  # each song's own .lrc found: none fetched
-n=len(m.toasts); m.advance(500,clear=False)
-assert len(m.toasts)==n+1 and m.toasts[-1][3]=='Album lyrics: 2 already had lyrics' and m.joins==[77]; passed()
-press_count=len(m.threads); m.advance(1000); assert len(m.threads)==press_count and len(m.toasts)==n+1; passed()  # the timer has ended
-m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; press()  # cancelled before its first song
-assert m.call(address=worker,args=(arg,0,0,0),gap=0,count=5_000_000)==0 and not m.accessed
-m.advance(500,clear=False); assert m.toasts[-1][3]=='Cancelled' and m.nodes[label]['text']=='Download Album Lyrics'; passed()
-m,label,press=album_lyrics_page(); press(); worker,arg=m.threads[-1]; n=len(m.toasts)
-assert m.call(address=payload_syms['album_lyrics_stop'],args=(0,0,0,0),gap=0)==0 and m.joins==[77]  # USB storage: joined first
-m.advance(500,clear=False); assert len(m.toasts)==n and m.nodes[label]['text']=='Download Album Lyrics'; passed()
-m.found=[]; press(); assert m.toasts[-1][3]=='No album songs on the card' and len(m.threads)==1; passed()
 
 # Sparse populated initials: one destination per sustained tick, both directions, utilities
 # and wrap edges. Album and Artist share article handling; nonalphabetical sorts stay single-step.
@@ -12031,8 +12012,12 @@ def more_rows(boot):
     assert m.call(address=HOOKS['playermore_page_init'][0],args=(m.top,0,0,0),gap=0)==0; lay(m,view)
     return m,view,labels,ab
 m,view,labels,ab=more_rows(classic_light_on)
-assert [geometry(m,l)[0]+geometry(m,l)[2] for l in labels]==[316]*5+[350] and all(geometry(m,l)[3]>=27 and m.nodes[l]['style:normal:font_size']==27 for l in labels)
-for row,want in enumerate([1,1,1,1,1,0,0]):
+# Q2 Podcast's ⋯ page (podcast_more): Download Cover & Lyrics and Look up Artist (stock's rows 2 and 4) are gone,
+# so the page-opening rows with a chevron are Queue, Add to Playlist and Look up Podcast; then Delete Song, A-B
+# Repeat, the speed, the skip lengths and AirPlay's row
+labels=[l for i,l in enumerate(labels) if i not in (2,4)]
+assert [geometry(m,l)[0]+geometry(m,l)[2] for l in labels]==[316]*3+[350] and all(geometry(m,l)[3]>=27 and m.nodes[l]['style:normal:font_size']==27 for l in labels)
+for row,want in enumerate([1,1,1,0,0,0,0]):
     m.paint(view); assert m.selected(view)==row and [i[:2] for i in m.icons]==([(317+25,m.sel()[1]+16)] if want else []),(row,m.icons,m.sel())
     m.call()
 m.paint(view); assert m.selected(view)==7 and not m.icons
@@ -13895,7 +13880,7 @@ m2=RateMachine(m.files['/mnt/data/ringnav-ratings']); assert m2.badge()=='2'
 m2.word(O['MCL_POS'],0); m2.advance(500); assert m2.badge() is None; passed()
 # Hold Play/Pause on Now Playing: Rate last, with the hearts, and no Next/Previous album outside Shuffle Albums/Folders; its row opens the same picker.
 m2.word(O['MCL_POS'],1); m2.handlers[syms['navigator_to']]='q:navigator_to'; m2.press(100)
-assert m2.hold()==11 and m2.labels()[-2:]==['Group by: Album','Rate  ★★☆☆☆'] and m2.release()==0
+assert m2.hold()==11 and m2.labels()[-4:]==['Group by: Album','Skip Back: 5 s','Skip Forward: 30 s','Rate  ★★☆☆☆'] and m2.release()==0
 m2.pick(len(m2.labels())-1); m2.advance(0); m2.top=m2.np; assert m2.caption()=='2 of 5' and m2.call(O['KEY_RETURN'])==11; passed()
 # More…: last, below Rate, while Now Playing has its img_more; its row clicks that as a tap would
 m3=RateMachine(); more=m3.node('image','img_more'); m3.nodes[m3.np]['children'].append(more); m3.word(more+O['W_PARENT'],m3.np)
@@ -14168,7 +14153,7 @@ assert m.opened[-1][0]=='folder_page' and m.u.mem_read(syms['g_folder_layer'],1)
 assert m.open()==('/mnt/mmc',2); passed()
 # Now Playing: the playing song's row sits after Go to Artist, before the play modes.
 m=playing_menu(); m.dirs.add('/mnt/mmc/Music'); m.word(m.items(m.get(syms['mcl_pdeqplaylist']))[1]+O['REC_PATH'],m.string('/mnt/mmc/Music/B'))
-m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:]+['Go to Folder','Shuffle','Repeat','Group by: Album']
+m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+SONG_MENU[2:]+['Go to Folder','Shuffle','Repeat','Group by: Album','Skip Back: 5 s','Skip Forward: 30 s']
 passed()
 
 # Photos (patch/photos.c): the helpers first. Names: .jpg, .jpeg and .png, case aside, not hidden.
@@ -18247,10 +18232,13 @@ assert m.get(payload_syms['wheel_guard'])==1; passed()
 m,rows,texts,*_=settings_page('power','scroll_view_powermanager',{'STANDBYLIMIT':'4'})
 assert texts()[0]=='Standby Limit: Off'; passed()  # out of range: Off
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15)
-assert len(rows)==6 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput','playset_folderjump']
-assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders']
+# Q2 Podcast's skip lengths (podcast.c) last
+assert len(rows)==8 and icons==['playset_gapless','playset_memplay','playset_balance','playset_balance','playset_dsdoutput',
+                                'playset_folderjump','play_back5','play_fwd30']
+assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R','MQA','Library & Folders','Skip Back: 5 s',
+                 'Skip Forward: 30 s']
 # Library & Folders: its row opens stock's page again as the sub-page, stock's two rows kept, ours built.
-assert click(-1)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
+assert click(5)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,sub=1)
 assert len(rows)==4 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump']
 assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card']
@@ -18480,7 +18468,7 @@ m.call(address=payload_syms['mono_sync'],args=(0,0,0,0),gap=0)
 assert 'mono:peq_attach' not in [c[0] for c in m.calls]; passed()
 # Playback Setting restacks by use (navigation.c playset_order): stock's rows by id, then ours.
 def stacked(m,view_name): return [(m.entries+rows).index(c) for c in m.nodes[named(m,m.top,view_name)]['children'] if c in m.entries+rows]
-assert stacked(m,'scroll_view_playset')==[3,2,9,15,8,16,0,10,4,5,11,17,18,12,1,6,19,7,20]; passed()
+assert stacked(m,'scroll_view_playset')==[3,2,9,15,8,16,0,10,4,5,11,17,18,12,1,6,19,7,20,21,22]; passed()  # the skip lengths last
 assert all(r in m.entries+rows for r in m.nodes[m.settings_view]['children'])  # no headings
 for i in (0,1,5):
     button=m.nodes[rows[i]]['children'][0]
@@ -19704,17 +19692,7 @@ apps_open(m); m.nodes[m.wm]['children']=[m.page]
 deezer=(m.labels().index('Deezer')-1)//2; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
 m.advance(500); m.link=1; m.row(deezer); assert m.toasts[-1][3]==SW_WAIT and not m.threads
 m.advance(500,clear=False); assert len(m.threads)==1 and m.labels()[2*deezer+2]=='Checking…'; passed()
-class SmartAlbumLyrics(SmartMixin,AlbumLyricsMachine): pass
-m=SmartAlbumLyrics(); button=m.nodes[m.more()[4]]['children'][0]; label=m.nodes[button]['children'][1]
-m.found=[m.song('T1'),m.song('T2')]
-for ms in (1,SW_IDLE):  # power_poll's: its settings, then Smart Wi-Fi's
-    m.now+=ms; m.call(address=payload_syms['pod_settings'],args=(0,0,0,0),gap=0); m.call(address=payload_syms['smart_poll'],args=(0,0,0,0),gap=0)
-assert m.flag()==0; m.nodes[m.wm]['children']=[m.top]
-def al_press():
-    f,ctx=m.handler(button,O['EVT_CLICK']); assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000)==0
-al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
-m.advance(500); m.link=1; al_press(); assert m.toasts[-1][3]==SW_WAIT and not m.threads
-m.advance(500,clear=False); assert len(m.threads)==1 and m.nodes[label]['text']=='Downloading 1 of 2'; passed()
+# (Q2 Podcast has no Download Album Lyrics row on Now Playing's ⋯ page, so Smart Wi-Fi isn't asked for it there.)
 # A radio that can't come back (stock's own gate shut: the first scan not taken) still runs the press
 # SMART_CONNECT_MS on, unheld, so it fails as without Smart Wi-Fi instead of waiting again.
 m=SmartRadio(); m.config['TOKEN']='t'; m.poll(1); m.poll(SW_IDLE); assert m.flag()==0
@@ -20374,7 +20352,7 @@ m=ChapterMachine(ready=False); m.open_chapters(); m.advance(50)
 f,ctx=m.handler(m.page,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.cancelled==1
 m.advance(50); assert m.freed==1 and not m.timers; passed()
-# Podcasts on Now Playing (podcast.c): on a spoken track a side button's press skips 15 s back or 30 s on,
+# Podcasts on Now Playing (podcast.c): on a spoken track a side button's press skips 5 s back or 30 s on (the lengths' defaults),
 # and held (PC_HOLD_MS) it jumps between the file's chapters, read once through the same reader; stock
 # sees none of the press. A music track's side buttons stay stock's.
 PODCAST='/mnt/mmc/Podcasts/Show/2024-01-01 - Ep.mp3'
@@ -20385,7 +20363,7 @@ def side(m,key,held=0):
     return down,m.call(key,gap=0,clear=False)
 def jumps(m): return [(c[0],c[1]) for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','player_next_music','player_prev_music','chapters_start')]
 def pc_poll(m): m.call(address=payload_syms['podcast_poll'],gap=0,clear=False)
-for key,to in ((O['KEY_FWD_BTN'],100),(O['KEY_BACK_BTN'],55)):
+for key,to in ((O['KEY_FWD_BTN'],100),(O['KEY_BACK_BTN'],65)):
     m=ChapterMachine(path=PODCAST); assert side(m,key)==(11,11) and jumps(m)==[('player_seek_time',to)],jumps(m); passed()
 m=ChapterMachine(path=PODCAST); m.playtime=5; assert side(m,O['KEY_BACK_BTN'])==(11,11) and jumps(m)==[('player_seek_time',0)]; passed()
 m=ChapterMachine(path=PODCAST); m.playtime=210; assert side(m,O['KEY_FWD_BTN'])==(11,11) and jumps(m)==[('player_seek_time',224)]; passed()  # the end: 225 long
@@ -20475,8 +20453,8 @@ rows=m.nodes[m.scroll(2)]['children']; assert [m.texts_in(r) for r in rows]==[['
 assert [m.nodes[m.nodes[r]['children'][0]]['style:normal:text_color'] for r in rows]==[-0x555556,-1,-0x555556]  # 70 s: the second, white
 f,ctx=m.handler(rows[2],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert jumps(m)==[('player_seek_time',120)]; passed()
-# The buttons beside the art: 15 s back and 30 s on; the previous chapter (this one's start, 10 s in) and the next.
-for name,want in (('img_pc_fwd',('player_seek_time',100)),('img_pc_back',('player_seek_time',55)),
+# The buttons beside the art: 5 s back and 30 s on; the previous chapter (this one's start, 10 s in) and the next.
+for name,want in (('img_pc_fwd',('player_seek_time',100)),('img_pc_back',('player_seek_time',65)),
                   ('img_pc_chapnext',('player_seek_time',120)),('img_pc_chapprev',('player_seek_time',60))):
     m.click(m.named(name)); assert jumps(m)==[want],(name,jumps(m)); passed()
 # A transcript (the player's lyrics, a .lrc beside the episode): its page last, a fifth dot; gone TRANSCRIPT_GONE_MS after

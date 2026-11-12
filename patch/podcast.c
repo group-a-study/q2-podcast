@@ -487,7 +487,7 @@ static int shows(void *w, const char *s) {
 }
 
 /* A local track without a title of its own (a song played from Folder, as every Pocket episode is,
- * its title only its file's name): the title the player reads from its file; until then, and for a
+ * or an episode or a book whose title is only its file's name): the title the player reads from its file; until then, and for a
  * file without one, a spoken track's name as a title (name_title). Without an artist, a spoken
  * one's is its show (the album its file names), another's its file's. Now Playing, the lock screen and View Queue then name the
  * episode, not its file. Every UI pass: it is cheap, and the player reads a file's tags just as it
@@ -498,7 +498,7 @@ static void title_fill(void) {
     if (!r || I(r, REC_TYPE) != 8 || !P(r, REC_PATH)) return;
     const char *own = P(r, REC_TITLE), *artist = P(r, REC_ARTIST);
     int named = pc.named && own == pc.named, voice = spoken(P(r, REC_PATH)), changed = 0;
-    if (!own || !*own || named || name_only(own, P(r, REC_NAME))) {
+    if (!own || !*own || named || (voice && name_only(own, P(r, REC_NAME)))) {
         const char *tag = now_tag(r, REC_TITLE);
         char buf[256];
         if (tag != own && tag && *tag && !name_only(tag, P(r, REC_NAME))) { /* the player read it */
