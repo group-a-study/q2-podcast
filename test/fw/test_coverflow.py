@@ -2788,8 +2788,9 @@ def test_without_row_preview_the_pane_is_now_playing_s_and_without_the_pane_rows
 
 
 @pytest.mark.parametrize('kind, counts, want', (
-    (PANE_SHUFFLE, dict(songs=1), b'1 Song'), (PANE_LIBRARY, dict(songs=12), b'12 Songs'), (PANE_COVERFLOW, dict(albums=1), b'1 Album'),
-    (PANE_COVERFLOW, dict(albums=704), b'704 Albums'), (PANE_GAMES, dict(games=4), b'4 Games'), (PANE_GAMES, dict(games=1), b'1 Game'),
+    # Q2 Podcast's Library and Cover Flow count the podcasts' episodes and shows
+    (PANE_SHUFFLE, dict(songs=1), b'1 Episode'), (PANE_LIBRARY, dict(songs=12), b'12 Episodes'),
+    (PANE_COVERFLOW, dict(albums=1), b'1 Podcast'), (PANE_COVERFLOW, dict(albums=704), b'704 Podcasts'), (PANE_GAMES, dict(games=4), b'4 Games'), (PANE_GAMES, dict(games=1), b'1 Game'),
     (PANE_STREAM, dict(services=5), b'5 Services'), (PANE_STREAM, dict(services=1), b'1 Service'),
     (PANE_SETTINGS, dict(free_tenths=412), b'41.2 GB Free'), (PANE_SETTINGS, dict(free_tenths=5), b'0.5 GB Free'),
     (PANE_LIBRARY, {}, b''), (PANE_COVERFLOW, dict(songs=3), b''), (PANE_SETTINGS, {}, b''), (PANE_FOLDER, dict(songs=9), b''),

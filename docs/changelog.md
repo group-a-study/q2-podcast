@@ -8,7 +8,7 @@
   - Skip lengths: choose how far the buttons skip back and on (5, 10, 15, 30, 45 or 60 seconds; 5 back and 30 on unless you choose) from Now Playing's ⋯ page, the menu you get by holding Play/Pause on Now Playing, or Playback settings. The buttons show the lengths, and the side keys and a headset's Next and Previous skip the same.
   - Now Playing's **Queue** page, after Chapters: the episode playing, then what plays after it, each with arrows to move it up or down. Tap an episode to play it; the one that was playing goes first in the queue.
   - Now Playing's ⋯ page: no Download Cover & Lyrics, Download Album Lyrics or Look up Artist; Look up Album is **Look up Podcast**; Skip Back and Skip Forward are at its end.
-  - Cover Flow shows your podcasts, a cover each, rather than saying "Update Local Music first"; open one to play its episodes on the card.
+  - Cover Flow shows your podcasts, a cover each, rather than saying "Update Local Music first"; open one to play its episodes on the card. On Home's Split view, the Library row counts your episodes and Cover Flow's your podcasts.
   - "Library Updated, 46 Updated": the space after the comma.
 
 - **1.8.0**:

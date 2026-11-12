@@ -3714,11 +3714,11 @@ static int pane_caption(char *t, unsigned size) {
     case PANE_NOW:
         queue_now(&at, &n);
         return pane_count(t, size, n, "1 Song", "%u Songs");
-    case PANE_LIBRARY:
+    case PANE_LIBRARY: /* Q2 Podcast's counts are the podcasts' (COVERFLOW_WHERE): episodes, shows */
     case PANE_SHUFFLE:
-        return pane_count(t, size, (unsigned)home.songs, "1 Song", "%u Songs");
+        return pane_count(t, size, (unsigned)home.songs, "1 Episode", "%u Episodes");
     case PANE_COVERFLOW:
-        return pane_count(t, size, (unsigned)home.albums, "1 Album", "%u Albums");
+        return pane_count(t, size, (unsigned)home.albums, "1 Podcast", "%u Podcasts");
     case PANE_GAMES:
         return pane_count(t, size, (unsigned)home.games, "1 Game", "%u Games");
     case PANE_STREAM:

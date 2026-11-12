@@ -6245,7 +6245,8 @@ class CoverflowMachine(QueueMachine):
                 if self.on_open: self.on_open(self.text(a))
         elif name=='access': path=self.text(a); ret=0 if (self.cached if '/mnt/mmc/.coverflow/' in path else not self.missing) else -1
         elif name=='toolsQueryDbTable':
-            rows=self.albums if 'fileurl not like' in self.text(b) else []
+            # the album list's query: scoped to music (MUSIC_WHERE), or Q2 Podcast's Cover Flow's to the podcasts
+            q=self.text(b); rows=self.albums if 'fileurl not like' in q or "fileurl like '/mnt/mmc/podcasts/%'" in q else []
             self.deqs[self.get(syms['tools_pdeq_directory'])][1]=[self.copy('stSongInfo',e) for e in rows]
             ret=len(rows)
         elif name=='qsort': self.qsort(a,b,c,d)  # sorted by the payload's comparator, run nested
@@ -13253,8 +13254,14 @@ m=kept
 # Classic, Home's Split: the pane follows the highlighted row. Each row's icon and caption from counts read while Home comes back to
 # the top, never on a wheel move: an icon alone where the count isn't known, the Library's and Shuffle's the song count, Now
 # Playing's the queue's. No cover here: Now Playing and Library show the note. Singular forms. Under the instruction cap.
+# Q2 Podcast's Home counts the podcasts (coverflow.c COVERFLOW_WHERE): SONGS' music as episodes under /mnt/mmc/podcasts,
+# its other spoken files elsewhere, so the counts stay 7 episodes in 6 shows (one row for those without an album).
+def podcast_path(p):
+    if p.startswith(('/mnt/mmc/audiobooks/','/mnt/mmc/podcasts/')) or p.endswith('.m4b'): return '/mnt/mmc/other/'+p.split('/',3)[3]
+    return '/mnt/mmc/podcasts/'+p.split('/',3)[3]
+PANE_SONGS=[(a,t,aa,podcast_path(p),y) for a,t,aa,p,y in SONGS]
 class PaneMachine(EraMachine):
-    def __init__(self,songs=SONGS):
+    def __init__(self,songs=PANE_SONGS):
         super().__init__(songs)
         self.threads=[]
         self.handlers[syms['pthread_create@GLIBC_2.2']]='pane_thread'; self.handlers[syms['pthread_join@GLIBC_2.0']]='pane_join'
@@ -13295,11 +13302,11 @@ def pane_cases():
     passed()
     m=pane_home(); view=named(m,m.top,'scroll_view_home'); m.call(address=payload_syms['coverflow_home_art'],args=(m.top,0,0,0),gap=0)
     m.advance(1500); m.paint(view); assert pane_shows(m)==([],[])  # a cover: Now Playing's and the Library's rows show it, and no caption
-    m.call(); assert pane_shows(m)==([],[]); m.call(); assert pane_shows(m)==(['classic_light_icon_stack'],['6 Albums']); passed()
+    m.call(); assert pane_shows(m)==([],[]); m.call(); assert pane_shows(m)==(['classic_light_icon_stack'],['6 Podcasts']); passed()
     m=pane_home(SHORTCUT='6'); view=named(m,m.top,'scroll_view_home'); pane_nocover(m)
     m.advance(1500); assert m.closed_db
     # (Q2 Podcast: the Shortcut row is Pocket, Now Playing's pane whatever SHORTCUT holds)
-    m.paint(view); want=[(['classic_light_note'],['3 Songs']),(['classic_light_note'],['7 Songs']),(['classic_light_icon_stack'],['6 Albums']),(['classic_light_icon_folder'],[]),
+    m.paint(view); want=[(['classic_light_note'],['3 Songs']),(['classic_light_note'],['7 Episodes']),(['classic_light_icon_stack'],['6 Podcasts']),(['classic_light_icon_folder'],[]),
                          (['classic_light_note'],['3 Songs']),(['classic_light_icon_wave'],['5 Services']),(['classic_light_icon_gear'],['4.0 GB Free'])]
     assert pane_shows(m)==want[0],pane_shows(m)
     for row in range(1,7):
@@ -13320,7 +13327,7 @@ def pane_cases():
     passed()
     m=pane_home(); m.db.execute("delete from songtable where id>1"); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
     for _ in range(2): m.call()
-    assert pane_shows(m)[1]==['1 Album']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Song']; passed()
+    assert pane_shows(m)[1]==['1 Podcast']; m.call(O['KEY_RETURN']); m.call(); assert pane_shows(m)[1]==['1 Episode']; passed()
     # Q2 Podcast: the Shortcut row is Pocket, Now Playing's pane, whatever SHORTCUT holds (Rockbox or Podcasts here).
     for value in ('0','8'):
         m=pane_home(SHORTCUT=value); m.advance(1500); view=named(m,m.top,'scroll_view_home'); pane_nocover(m); m.paint(view)
@@ -13330,7 +13337,7 @@ def pane_cases():
     m=pane_home(); m.advance(1500); art=named(m,m.top,'img_homeart'); lib=named(m,m.top,'list_view_homelib'); lview=named(m,m.top,'scroll_view_localmusic'); pane_nocover(m)
     m.nodes[lview]['children']=[m.entry(lview,i*28) for i in range(11)]
     for i,want in ((1,'classic_light_note'),(0,'classic_light_note'),(3,'classic_light_note')):
-        m.call(address=payload_syms['coverflow_home_row'],args=(lview,m.nodes[lview]['children'][i],i,0),gap=0); assert pane_shows(m)==([want],['7 Songs']),i
+        m.call(address=payload_syms['coverflow_home_row'],args=(lview,m.nodes[lview]['children'][i],i,0),gap=0); assert pane_shows(m)==([want],['7 Episodes']),i
     sets=named(m,m.top,'scroll_view_homeset'); m.call(address=payload_syms['coverflow_home_row'],args=(sets,m.nodes[sets]['children'][0],0,0),gap=0); assert pane_shows(m)==(['classic_light_icon_gear'],['4.0 GB Free']); passed()
 pane_cases()
 
