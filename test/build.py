@@ -484,11 +484,21 @@ def validate_assets(directory):
     from ipod import PC_IMAGES, PC_SIDE, PC_DOTS, PC_TOP
     assert [named[n].get('image') for n in PC_SIDE] == list(PC_IMAGES)
     nodes = {n[2].get('name'): n for n in walk(stock_page)}
-    assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_info']
+    assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters',
+                                                              'view_pc_queue', 'view_info']
     assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric'] and named['view_pc_shelf']['visible'] == 'false'
+    # stock's hit test skips only insensitive widgets: the hidden shelf took every touch on the pages (1.8.0)
+    assert named['view_pc_shelf']['sensitive'] == 'false' and nodes['view_pc_shelf'][1][0] < -300
+    assert named['image_wait']['sensitive'] == 'false'
     assert PC_TOP + nodes['slide_indicator1'][1][1] == PC_DOTS and nodes['img_playmode'][2]['visible'] == 'false'
     album = [c[2]['name'] for c in nodes['view_album'][3]]
     assert {'scrlabel_title', 'scrlabel_artist', *PC_SIDE} <= set(album), album
+    # the title and the show span the bar and scroll to and fro; Return is on the screen, "3 of 12" centred
+    from ipod import PC_BAR_X, PC_BAR_W
+    for row in ('scrlabel_title', 'scrlabel_artist'):
+        assert nodes[row][1][0] == PC_BAR_X and nodes[row][1][2] == PC_BAR_W and named[row]['yoyo'] == 'true'
+    back, pos = nodes['img_return'][1], nodes['label_ipod_pos'][1]
+    assert back[0] >= 0 and pos[0] + pos[2] // 2 == 375 // 2 and named['label_ipod_pos']['style:normal:text_align_h'] == 'center'
     # Curly quotes draw the straight glyphs and ♡ takes ♥'s box and advance; other tables keep their
     # stock bytes (head: its checksum).
     from build import QUOTES

@@ -803,21 +803,26 @@ def playing_stock(data):
         [n[2].get('name') for n in named['slide_view'][3]] == ['view_album', 'view_lyric', 'view_info'],
         'Unexpected Now Playing page')
     buttons, title, artist = root[3][:3]
-    # Q2 Podcast (fork-only): the one Now Playing page, every theme's (navigation.c np_layout). The top row is the
-    # iPod page's, "3 of 12" and More, Return the hardware's. Below it the slide_view spans the window down to the
-    # bar, so a swipe takes all of the first page: the art centred, the title and show under it, and three buttons
-    # down each side of the art (PC_SIDE), the star, 15 s back and the previous chapter left, AirPlay, 30 s on and
-    # the next chapter right (patch/podcast.c, airplay.c). The info page follows and then the lyrics page, which is
-    # an episode's transcript (podcast.c moves it in and out); podcast.c puts Description and Chapters after the art.
-    # Repeat has no button: its widget stays, hidden, for stock's code. The dots sit under the bar, between the times.
+    # Q2 Podcast (fork-only): the one Now Playing page, every theme's (navigation.c np_layout). The top row is
+    # Return, "3 of 12" centred and More. Below it the slide_view spans the window down to the bar, so a swipe takes
+    # all of the first page: the art centred, the title and show under it, and three buttons down each side of the
+    # art (PC_SIDE), the star, skip back and the previous chapter left, AirPlay, skip on and the next chapter right
+    # (patch/podcast.c, airplay.c). Description, Chapters, the Queue and the info follow, then the lyrics page, which
+    # is an episode's transcript (podcast.c moves it in and out). Repeat has no button: its widget stays, hidden, for
+    # stock's code. The dots sit under the bar, between the times.
     buttons[1] = [0, 0, 375, NP_TOP]
-    named['img_return'][1][0] = -200
     more = named['img_more']
     more[2] = {k: v for k, v in more[2].items() if not k.endswith(('_offset', 'text_align_h'))}
     more[1] = [NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
-    buttons[3].append(['label', [NP_POS_X, 0, NP_ICONS_END - NP_ICON - NP_POS_X, NP_TOP], {
+    # Return, the chevron, mirrors More at the row's left (the user's ask, 2026-11-12), its stock 5 px lift dropped
+    # in the shorter row; "3 of 12" centred between them
+    back = named['img_return']
+    back[2] = {k: v for k, v in back[2].items() if not k.endswith('y_offset')}
+    back[1] = [375 - NP_ICONS_END, 0, NP_ICON, NP_TOP]
+    pos_x = 375 - NP_ICONS_END + NP_ICON
+    buttons[3].append(['label', [pos_x, 0, 375 - 2 * pos_x, NP_TOP], {
         'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
-        'style:normal:text_align_h': 'left'}, []])
+        'style:normal:text_align_h': 'center'}, []])
     buttons[3].remove(fav)
     mode[1] = [-200, 0, NP_ICON, NP_ICON]
     mode[2]['visible'] = 'false'
@@ -833,12 +838,16 @@ def playing_stock(data):
         else:
             side.append(['image', [x, y, PC_BTN, PC_BTN], {'name': name, 'image': image, 'draw_type': 'center',
                                                           'clickable': 'true'}, []])
-    title[1] = [NP_MARGIN, PC_ART + PC_TEXT_GAP, 375 - 2 * NP_MARGIN, PC_TITLE_H]
-    artist[1] = [NP_MARGIN, PC_ART + PC_TEXT_GAP + PC_TITLE_H, 375 - 2 * NP_MARGIN, PC_ARTIST_H]
+    # The title and the show span the progress bar (PC_BAR_X, PC_BAR_W; podcast.c keeps them to it as it narrows
+    # for a long track), each scrolling to its end and back (yoyo: the marquee's hold at either end, lull 0).
+    title[1] = [PC_BAR_X, PC_ART + PC_TEXT_GAP, PC_BAR_W, PC_TITLE_H]
+    artist[1] = [PC_BAR_X, PC_ART + PC_TEXT_GAP + PC_TITLE_H, PC_BAR_W, PC_ARTIST_H]
+    for row in (title, artist):
+        row[2].update(loop='true', yoyo='true', lull='0')
     named['view_album'][3] += [title, artist, *side]
     root[3][1:3] = []
-    # The pages: the art, Description, Chapters, the info (its stock 225 px column centred on the screen), then the
-    # lyrics, which wait in a hidden view beside the slide_view (view_pc_shelf) until a track has some: podcast.c
+    # The pages: the art, Description, Chapters, the Queue, the info (its stock 225 px column centred on the screen),
+    # then the lyrics, which wait in a hidden view beside the slide_view (view_pc_shelf) until a track has some: podcast.c
     # moves them in and out. Stock finds them all by name. Description is a wrapped label in a scroll_view, Chapters
     # a scroll_view podcast.c fills with a row a chapter.
     slide_h = PC_ART + PC_TEXT_GAP + PC_TITLE_H + PC_ARTIST_H
@@ -852,14 +861,18 @@ def playing_stock(data):
     desc = scroll_page('view_pc_desc', [['label', [NP_MARGIN, 0, 375 - 2 * NP_MARGIN, slide_h], {
         'name': 'label_pc_desc', 'style': 's_label_white20c', 'style:normal:font_size': '16', 'line_wrap': 'true',
         'word_wrap': 'true'}, []]])
-    named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_chapters', []), info_page]
+    # the Queue (the user's, 2026-11-12): podcast.c fills it, the playing episode and Up Next, each with arrows
+    named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_chapters', []), scroll_page('view_pc_queue', []),
+                              info_page]
     for n in named['view_info'][3]:
         n[1][0] += (375 - 225) // 2
     dots_y = PC_DOTS - PC_TOP
     named['slide_view_view'][1] = [0, PC_TOP, 375, dots_y + 10]
     named['slide_view'][1] = [0, 0, 375, slide_h]
-    named['slide_view_view'][3].append(['view', [0, 0, 375, slide_h], {'name': 'view_pc_shelf', 'visible': 'false'},
-                                        [lyric_page]])
+    # the shelf is off the screen and insensitive as well as hidden: stock's hit test skips only insensitive
+    # widgets (docs/internals.md, Picker), so a hidden one over the pages took every tap and swipe on them
+    named['slide_view_view'][3].append(['view', [-400, 0, 375, slide_h], {'name': 'view_pc_shelf', 'visible': 'false',
+                                                                          'sensitive': 'false'}, [lyric_page]])
     dots = named['slide_indicator1']
     check(dots[1][1] == PC_DOTS and dots[2]['self_layout'] == f'default(x=0,y={PC_DOTS},w=100%,h=10)', 'Unexpected stock dots')
     for key in dots[2]:
@@ -869,11 +882,12 @@ def playing_stock(data):
     dots[2]['self_layout'] = f'default(x=0,y={dots_y},w=100%,h=10)'
     dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')  # as the iPod page's: the dots stay put in a swipe
     named['image_wait'][1] = [art_x + (PC_ART - 54) // 2, PC_TOP + (PC_ART - 54) // 2, 54, 54]
+    named['image_wait'][2]['sensitive'] = 'false'  # hidden but over the art: taps go to the art
     # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
     # images drew theirs: its 82 px box's middle, 6 px down.
     bar = named['slider_play']
     check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
-    np_slider(bar, 50, 208 + 82 // 2 + 6, 290, NP_BAR[3])
+    np_slider(bar, PC_BAR_X, 208 + 82 // 2 + 6, PC_BAR_W, NP_BAR[3])
     check(PC_TOP + slide_h < 208 + 82 // 2 + 6 - NP_BAR[3], "the first page's text clear of the bar")
     return encode(root)
 
@@ -888,9 +902,10 @@ PC_TITLE_H = 22
 PC_ARTIST_H = 18
 PC_BTN = 50
 PC_DOTS = 270
+PC_BAR_X, PC_BAR_W = 50, 290  # the progress bar, stock's; the title and show span it
 # The side buttons, left column top to bottom, then the right: names (patch/podcast.c, airplay.c) and images.
 PC_SIDE = ('img_fav', 'img_pc_back', 'img_pc_chapprev', 'img_airplay', 'img_pc_fwd', 'img_pc_chapnext')
-PC_IMAGES = ('play_unfav', 'play_back15', 'play_chapprev', 'airplay', 'play_fwd30', 'play_chapnext')
+PC_IMAGES = ('play_unfav', 'play_back5', 'play_chapprev', 'airplay', 'play_fwd30', 'play_chapnext')  # the default lengths
 
 
 def pc_frames():
@@ -1163,7 +1178,10 @@ def slider_plain(path, root):
 # Q2 Podcast (fork-only): My Fav's heart is a star, Pocket Casts' (assets/icons: the hearts' 28 px, their ink and
 # baseline), filled when on; and Now Playing's buttons beside the art, drawn as it is (tools/ipod.py PC_SIDE).
 STAR_ICONS = {'play_fav.png': 'play_star.png', 'play_unfav.png': 'play_unstar.png'}
-PC_ICONS = ('play_back15.png', 'play_fwd30.png', 'play_chapprev.png', 'play_chapnext.png')
+# The skip buttons have a glyph for each length the user can choose (podcast.c SKIPS), the seconds in the ring.
+PC_SKIPS = (5, 10, 15, 30, 45, 60)
+PC_ICONS = (*(f'play_{kind}{s}.png' for kind in ('back', 'fwd') for s in PC_SKIPS), 'play_chapprev.png',
+            'play_chapnext.png', 'play_qup.png', 'play_qdown.png')  # the Queue page's arrows last
 
 
 def quiet_icon(name, data):

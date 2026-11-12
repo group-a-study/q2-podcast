@@ -1780,7 +1780,11 @@ def test_playback_orders_its_rows_and_ends_on_library_and_folders(fw):
     fw.fn('ringnav_audioset', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
     rows = view.children
     ids = [r.name for r in rows]
-    assert len(rows) == 19 and 's13' not in ids and 's14' not in ids  # Folder art and skip: Library & Folders'
+    assert len(rows) == 21 and 's13' not in ids and 's14' not in ids  # Folder art and skip: Library & Folders'
+    # Q2 Podcast's skip lengths (podcast.c) after it, each a tap on to the next length
+    assert [ui.text(label_of(r)) for r in rows[-2:]] == ['Skip Back: 5 s', 'Skip Forward: 30 s']
+    assert [icon(r) for r in rows[-2:]] == ['play_back5', 'play_fwd30']
+    rows = rows[:-2]
     at = {r.name or icon(r): k for k, r in enumerate(rows)}
     assert rows[-1] is row(ui, view, 'Library & Folders') and 'list_into' in [c.props.get('image') for c in rows[-1].walk()]
     assert (at['s3'], at['s2']) == (0, 1)  # Play Mode, then EQ
@@ -1821,7 +1825,7 @@ def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
     again = ui.add('scroll_view', ui.window('playset_page'), (0, 26, 375, 294), 'scroll_view_playset')
     playset(fw, ui, again)
     audioset(ui.top.addr, None)
-    assert len(again.children) == 19  # the next open is the main page again
+    assert len(again.children) == 21  # the next open is the main page again (the skip lengths last)
 
 
 def test_artists_toggles_stocks_artist_type(fw):
@@ -2781,3 +2785,70 @@ def test_classic_brings_a_cut_row_whole_when_tapped(fw, st, which, revealed):
     assert bool(offsets) == revealed
     if revealed:
         assert offsets[0] + 294 >= 336 and offsets[0] <= 288
+
+
+MORE_LABELS = ['Queue', 'Add to Playlist', 'Download Cover & Lyrics', 'Look up Album', 'Look up Artist', 'Delete Song',
+               'A-B Repeat', 'Multiple Speed']  # stock's ⋯ rows by position, as PLAYMORE_ROWS gives their kinds
+
+
+@pytest.fixture
+def more_page(fw):
+    """Now Playing's ⋯ page as stock's init builds it: eight rows, each button named by its position (stock's
+    click reads its kind from PLAYMORE_ROWS by it), its label stock's text."""
+    at, size = O['PLAYMORE_ROWS'], 4 * O['PLAYMORE_COUNT']
+    saved = C.string_at(at, size)
+    C.memmove(at, struct.pack('<8i', 2, 3, 4, 5, 6, 7, 0, 1), size)
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playermore_page', 'scroll_view_more')
+
+    def build(*_):
+        for i, text in enumerate(MORE_LABELS):
+            item = ui.add('list_item', view, (0, 0, 375, 70))
+            button = ui.add('button', item, (20, 0, 335, 70), str(i)).clickable()
+            ui.set_text(ui.add('hscroll_label', button, (72, 0, 260, 70)), text)
+        return 3
+    fw.mock('stock_playermore_trampoline', build)
+    yield ui, win, view
+    C.memmove(at, saved, size)
+
+
+def test_q2_podcasts_more_page_drops_the_music_rows_and_sets_the_skip_lengths(fw, more_page):
+    """Q2 Podcast (the user's, 2026-11-12): no Download Cover & Lyrics, Download Album Lyrics or Look up Artist;
+    Look up Album is Look up Podcast, stock's click still reading its kind from its button's name; the skip
+    lengths last."""
+    ui, win, view = more_page
+    assert fw.fn('ringnav_playermore', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None) == 3
+    texts = [ui.text(label_of(r)) for r in view.children]
+    assert texts == ['AirPlay', 'Queue', 'Add to Playlist', 'Look up Podcast', 'Delete Song', 'A-B Repeat',
+                     'Multiple Speed', 'Skip Back: 5 s', 'Skip Forward: 30 s']
+    assert row(ui, view, 'Look up Podcast').children[0].name == '3'
+
+
+def test_a_skip_row_steps_to_the_next_length_and_keeps_it(fw, more_page):
+    ui, win, view = more_page
+    saved = []
+    fw.mock('write_int_config', lambda *a: saved.append((a[0], C.string_at(a[1]).decode(), C.string_at(a[2]).decode())) or 0)
+    fw.fn('ringnav_playermore', C.c_int, C.c_void_p, C.c_void_p)(win.addr, None)
+    back = row(ui, view, 'Skip Back: 5 s')
+    assert icon(back) == 'play_back5'
+    click(ui, back)
+    assert ui.text(label_of(back)) == 'Skip Back: 10 s' and icon(back) == 'play_back10'
+    for _ in range(5):  # on through 15, 30, 45 and 60 to 5 again
+        click(ui, back)
+    assert ui.text(label_of(back)) == 'Skip Back: 5 s'
+    assert saved == [(s, 'Q2POD', 'SKIPBACK') for s in (10, 15, 30, 45, 60, 5)]
+    click(ui, row(ui, view, 'Skip Forward: 30 s'))
+    assert saved[-1] == (45, 'Q2POD', 'SKIPFWD')
+
+
+def test_q2_podcasts_pages_take_touches_and_the_title_spans_the_bar(fw):
+    """1.8.0's hidden shelf (the transcript's) over the pages took every tap and swipe: stock's hit test skips
+    only insensitive widgets, so it is made insensitive. The title and the show span the progress bar."""
+    ui, win, view, settings, _ = settings_page(fw, MINIMAL, 'playing_page', 'slide_view')
+    shelf = ui.add('view', win, (-400, 0, 375, 207), 'view_pc_shelf')
+    ui.add('slider', win, (50, 233, 290, 44), 'slider_play')
+    title = ui.add('hscroll_label', win, (16, 167, 343, 22), 'scrlabel_title')
+    show = ui.add('hscroll_label', win, (16, 189, 343, 18), 'scrlabel_artist')
+    fw.fn('podcast_attach', None, C.c_void_p)(win.addr)
+    assert [c[1][:2] for c in fw.calls('widget_set_sensitive')] == [(shelf.addr, 0)]
+    fw.fn('podcast_poll', None)()
+    assert title.box == (50, 167, 290, 22) and show.box == (50, 189, 290, 18)

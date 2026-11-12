@@ -2,8 +2,9 @@
 
 A fork of [Q2 Pod](https://github.com/DiamondBond/q2-pod) 1.7.6 for podcasts and audiobooks. It has everything Q2 Pod has, and:
 
-- **Now Playing for podcasts:** the cover centred, with the star, 15 s back and the previous chapter down its left, AirPlay, 30 s on and the next chapter down its right; pages for the episode's **Description**, **Chapters**, details and **Transcript**, which follows the episode as it plays.
-- **Skip and chapters:** on an episode or a book, Next skips 30 seconds on and Previous 15 seconds back; hold one to jump between chapters.
+- **Now Playing for podcasts:** the cover centred, with the star, skip back and the previous chapter down its left, AirPlay, skip on and the next chapter down its right; pages for the episode's **Description**, **Chapters**, the **Queue** (move episodes up and down, tap one to play it) and **Transcript**, which follows the episode as it plays.
+- **Skip and chapters:** on an episode or a book, Next skips on and Previous back, 30 and 5 seconds unless you choose other lengths (⋯ page, Play/Pause's hold menu, Playback settings); hold one to jump between chapters.
+- **Cover Flow of your podcasts:** a cover a show, its episodes on the card to play.
 - **A podcast Library:** Podcasts, Episodes, Starred, Playlists, Recently Played and Audiobooks.
 - **Pocket on Home:** Home's Shortcut row opens the Pocket app straight away.
 - **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, keeps the first ten of Up Next downloaded (or all of it, with a press), cuts the ads and brings each episode's transcript; on its episodes, Now Playing's star is Pocket Casts' star.

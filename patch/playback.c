@@ -1203,6 +1203,45 @@ int playback_move(unsigned from) {
     return (int)from;
 }
 
+/* Q2 Podcast's Queue page (podcast.c): what plays after this track, in order, ignoring the
+ * single-song rules (the page lists the queue whatever the repeat). */
+unsigned playback_queue_rows(unsigned *out, unsigned max) { return upcoming(out, max); }
+
+/* The Queue page's up arrow: Up Next's row (as playback_queue_rows lists it) swaps with the one
+ * before it. The rows to it become the pending list's front in their new order (pend_front, last
+ * first), so the queue, its indices and the order stay as they were, as playback_move's hold does.
+ * Returns 0 when nothing moves (advanced play off, the first row, past PEND_LIMIT). */
+int playback_raise(unsigned row) {
+    unsigned idx[PEND_LIMIT], n;
+    void *q = queue();
+    if (!s.active || !q || deque_size(q) != s.n || !row || row >= PEND_LIMIT) return 0;
+    if ((n = upcoming(idx, row + 1)) <= row) return 0;
+    unsigned t = idx[row];
+    idx[row] = idx[row - 1], idx[row - 1] = t;
+    for (unsigned k = row + 1; k-- > 0;) pend_front(idx[k]);
+    close_preload();
+    s.next_valid = 0;
+    s.dirty = 1;
+    playback_save();
+    return 1;
+}
+
+/* The Queue page's tap: the track at `at` is to play now, and the one playing goes first in Up Next
+ * (as Pocket Casts' Up Next does), its place kept by the resume ring. Only the pending list
+ * changes; the caller then starts `at`. Returns 0 when advanced play is off or `at` plays already. */
+int playback_play_swap(unsigned at) {
+    void *q = queue();
+    unsigned pos = (unsigned)M(MCL_POS);
+    if (!s.active || !q || deque_size(q) != s.n || pos >= s.n || at >= s.n || at == pos) return 0;
+    close_preload();
+    s.next_valid = 0;
+    s.dirty = 1;
+    pend_take(at);
+    pend_front(pos);
+    playback_save();
+    return 1;
+}
+
 /* Snapshot fields are little-endian uint32 on this MIPS target, no pointers. Version 3: after the
  * history comes the pending Play Next list, npend indices. Version 2 had one run of it, forced and
  * force_end in the header, and restores as the list. Version 4 is version 3's layout for a queue

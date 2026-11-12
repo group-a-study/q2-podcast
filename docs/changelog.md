@@ -1,5 +1,16 @@
 # Changelog
 
+- **1.8.1**:
+  - Now Playing takes touches again: in 1.8.0 a hidden view over the pages (the transcript's, waiting for an episode that has one) took every swipe and every tap but AirPlay's. It is now off the screen and ignores touches.
+  - Now Playing: the back arrow is back, top left, and "2 of 26" is centred.
+  - Now Playing: the title and the show are as wide as the progress bar and scroll to their end and back.
+  - Now Playing: an episode Pocket plays shows its title, not its file's name. A title that is only the file's name counts as none, so the title tag in the file (Pocket writes the episode's) or, without one, the name tidied up (no date, no underscores) takes its place, and stays when the player redraws it.
+  - Skip lengths: choose how far the buttons skip back and on (5, 10, 15, 30, 45 or 60 seconds; 5 back and 30 on unless you choose) from Now Playing's ⋯ page, the menu you get by holding Play/Pause on Now Playing, or Playback settings. The buttons show the lengths, and the side keys and a headset's Next and Previous skip the same.
+  - Now Playing's **Queue** page, after Chapters: the episode playing, then what plays after it, each with arrows to move it up or down. Tap an episode to play it; the one that was playing goes first in the queue.
+  - Now Playing's ⋯ page: no Download Cover & Lyrics, Download Album Lyrics or Look up Artist; Look up Album is **Look up Podcast**; Skip Back and Skip Forward are at its end.
+  - Cover Flow shows your podcasts, a cover each, rather than saying "Update Local Music first"; open one to play its episodes on the card.
+  - "Library Updated, 46 Updated": the space after the comma.
+
 - **1.8.0**:
   - Q2 Podcast now has everything Q2 Pod's latest test builds have: its battery work and fixes up to Q2 Pod 1.7.6 and since (see **1.7.7** and **1.7.6** below), letters in long lists, the still Home art and the rest.
   - Now Playing: one page under every theme, the cover centred. Down each side of the cover are three buttons: the star, 15 seconds back and the previous chapter on the left; AirPlay, 30 seconds on and the next chapter on the right. Without chapters, the chapter buttons go to the previous or next episode. The repeat button is gone.

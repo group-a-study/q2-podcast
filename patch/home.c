@@ -54,8 +54,9 @@ static void library_look(void *view) {
     }
 }
 
-/* A stock row as Q2 Podcast's: its label's text, and its icon's image when icon is given. */
-static void stock_row_as(void *row, const char *icon, const char *text) {
+/* A stock row as Q2 Podcast's: its label's text, and its icon's image when icon is given (also
+ * podcast.c's, for Now Playing's ⋯ page). */
+void stock_row_as(void *row, const char *icon, const char *text) {
     void *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
     int named = 0;
     for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {

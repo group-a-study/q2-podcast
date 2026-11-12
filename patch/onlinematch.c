@@ -551,13 +551,13 @@ static int al_gone(void *ctx, void *event) {
  * row click (an atoi of the name) never sees it. Only for a playing song on the card; a page
  * without stock's rows is left as it built it. The AirPlay row (airplay.c) goes over them all. */
 extern int stock_playermore_trampoline(void *win, void *ctx);
-static void al_row(void *view);
+static void al_row(void *view) __attribute__((unused)); /* Q2 Podcast has no album lyrics row */
 int ringnav_playermore(void *win, void *ctx) {
     int result = stock_playermore_trampoline(win, ctx);
     if (win) stock_more_speed(win), stock_more_into(win);
     void *view = win ? widget_lookup(win, "scroll_view_more", 1) : (void *)0;
     if (view && widget_count_children(view) == PLAYMORE_COUNT) {
-        al_row(view);
+        podcast_more(view); /* Q2 Podcast's rows: no lyrics or cover downloads, the skip lengths */
         airplay_more(view); /* first, over stock's rows */
     }
     return result;

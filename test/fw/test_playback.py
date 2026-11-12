@@ -806,6 +806,33 @@ def test_move_refuses(fw, player, case):
     assert move({'current': 2, 'past': 6}.get(case, 1)) == -1 and player.pending() == []
 
 
+def test_raise_swaps_an_up_next_row_with_the_one_before(fw, player):
+    """Q2 Podcast's Queue page: an up arrow; the rows to it become the pending front in their new order."""
+    rows = fw.fn('playback_queue_rows', C.c_uint, C.c_void_p, C.c_uint)
+    up = fw.fn('playback_raise', C.c_int, C.c_uint)
+    player.load(player.albums(6))
+    assert player.set(0, 1) == 1
+    before = player.up_next()
+    assert up(2) == 1
+    assert player.up_next() == before[:1] + [before[2], before[1]] + before[3:] and len(player.up_next()) == len(before)
+    out = (C.c_uint * 8)()
+    assert list(out[:rows(out, 8)]) == player.up_next()
+    assert up(0) == 0 and up(len(before)) == 0  # the first row, past the last: nothing moves
+    assert up(1) == 1 and player.up_next()[:2] == [before[2], before[0]]
+
+
+def test_play_swap_keeps_the_playing_track_next(fw, player):
+    """The Queue page's tap: the track tapped is taken off the pending list and the playing one goes first."""
+    swap = fw.fn('playback_play_swap', C.c_int, C.c_uint)
+    player.load(player.albums(6))
+    assert player.set(0, 1) == 1
+    playing, pick = player.mcl.pos, player.up_next()[3]
+    assert swap(pick) == 1 and player.pending() == [playing]
+    assert swap(player.mcl.pos) == 0  # the one playing: nothing
+    player.clear()
+    assert swap(pick) == 0  # advanced play off
+
+
 def test_an_insert_remaps_every_index(fw, player):
     insert = fw.fn('playback_insert', None, C.c_uint, C.c_uint, C.c_int)
     rows = player.load(player.albums(3, 3))

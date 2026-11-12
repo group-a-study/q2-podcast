@@ -370,6 +370,7 @@ void library_poll(void); /* addon_library.c: an app's library update request, on
 int addon_open_id(const char *id); /* a card app's page by its id, hidden or not; 0 when not on the card */
 /* airplay.c: the q2-airplay app's side (docs/internals.md#airplay-sender) */
 void airplay_poll(void), airplay_button(void *win), airplay_more(void *view);
+void podcast_more(void *view); /* podcast.c: Q2 Podcast's rows on Now Playing's ⋯ page */
 int airplay_on(void), airplay_lyrics(int *ms);
 /* spotify.c's Q2SPOT/1 framing (docs/librespot.md), which the card apps speak too */
 int spot_escape(const char *s, char *out, unsigned size);

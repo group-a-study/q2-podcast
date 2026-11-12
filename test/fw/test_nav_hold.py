@@ -1480,7 +1480,8 @@ def song(recs, n, **kw):
 
 
 PLAYING_ROWS = ['Play Next', 'Add to Queue', 'View Queue', 'Add to Favourites', 'Add to Playlist', 'Go to Album',
-                'Go to Artist', 'Shuffle', 'Repeat', 'Group by: Album']
+                'Go to Artist', 'Shuffle', 'Repeat', 'Group by: Album',
+                'Skip Back: 5 s', 'Skip Forward: 30 s']  # Q2 Podcast's skip lengths (podcast.c), their defaults
 
 
 def test_holding_play_on_now_playing_opens_its_menu(hold, recs, ui, st):
@@ -1743,6 +1744,23 @@ def test_a_choice_picked_is_played_and_ticked_next_time(hold, recs, ui, fw):
     assert hold.menu() == PLAYING_ROWS  # the next hold is the menu again, not the choice
     hold.pick('Repeat')
     assert ticked_rows(ui, hold.view()) == ['Repeat All']
+
+
+def test_a_skip_length_is_chosen_from_its_list_and_kept(hold, recs, ui, fw):
+    """Q2 Podcast: Skip Back and Skip Forward each open the lengths, the one in use ticked; a pick is
+    saved (Q2POD SKIPBACK) and the next hold's row says it."""
+    saved = []
+    fw.mock('write_int_config',
+            lambda *a: saved.append((a[0], C.string_at(a[1]).decode(), C.string_at(a[2]).decode())) or 0)
+    hold.now_playing([song(recs, i) for i in range(3)])
+    hold.hold()
+    hold.menu()
+    hold.pick('Skip Back: 5 s')
+    assert ticked_rows(ui, hold.view()) == ['5 Seconds'] and hold.title() == 'Skip Back'
+    hold.pick('15 Seconds')
+    assert saved == [(15, 'Q2POD', 'SKIPBACK')] and hold.dialog not in ui.stack
+    hold.hold()
+    assert 'Skip Back: 15 s' in hold.menu() and 'Skip Forward: 30 s' in hold.menu()
 
 
 def test_classic_draws_the_menu_as_the_flip_panel_centred_under_the_bar(fw, ui, st, recs, mcl):

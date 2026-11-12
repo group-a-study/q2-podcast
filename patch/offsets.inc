@@ -644,6 +644,8 @@ static inline int arc_out(int r, int y) {
 /* Marked folders stay indexed for playlists; the wrappers expand this before grouping. */
 #include "library_scope.h"
 #define MUSIC_WHERE "fileurl not like '/mnt/mmc/audiobooks/%' and fileurl not like '/mnt/mmc/podcasts/%' and fileurl not like '%.m4b' and " LIBRARY_SCOPE_TOKEN
+/* Q2 Podcast: the podcasts alone (Library → Episodes, Cover Flow's shows); like ignores ASCII case */
+#define PODCASTS_WHERE "fileurl like '/mnt/mmc/podcasts/%'"
 /* Tags may store a full date (20220510 or 2022-05-10); compare the year before aggregating. */
 #define ALBUM_YEAR "max(case when cast(year as text) glob '[1-9][0-9][0-9][0-9]*' then cast(substr(year,1,4) as integer) else 0 end)"
 /* One row per album, as album_cmp tells them apart (coverflow.c; library_lists.c's Era). */
@@ -677,7 +679,9 @@ static inline int arc_out(int r, int y) {
  * confirm don't. */
 #define PLAYMORE_ROWS 0x7728a0
 #define PLAYMORE_COUNT 8
-#define PLAYMORE_SEARCH 4
+#define PLAYMORE_SEARCH 4 /* Download Cover & Lyrics */
+#define PLAYMORE_ALBUM 5  /* Look up Album (get_playmore_showinfo's player_albuminfo) */
+#define PLAYMORE_ARTIST 6 /* Look up Artist (player_songerinfo) */
 #define PLAYMORE_INTO_FIRST 2
 #define PLAYMORE_INTO_LAST 6
 #define MCL_LASTPOS 0xa3be90    /* shuffle "previous" index, -1 none */
@@ -811,7 +815,8 @@ static inline int arc_out(int r, int y) {
 #define VIS_LED_DB -1
 
 /* podcast.c: a side button held this long on a spoken track jumps a chapter (Play/Pause's and
- * Return's KEY_HOLD_MS); pressed, it skips SKIP_BACK_S back or SKIP_FWD_S on. */
+ * Return's KEY_HOLD_MS); pressed, it skips back or on the lengths chosen (skip_seconds), SKIP_BACK_S
+ * and SKIP_FWD_S until one is. */
 #define PC_HOLD_MS 700
-#define SKIP_BACK_S 15
+#define SKIP_BACK_S 5
 #define SKIP_FWD_S 30

@@ -28,6 +28,8 @@
 #define ROW_H 44
 #define TIME_W 76
 #define ROWS_MAX 200 /* the Chapters page's rows; a hold still reaches every chapter */
+#define QUEUE_ROWS 60 /* the Queue page's Up Next rows (playback.c's PEND_LIMIT is 64) */
+#define ARROW_W 44    /* each of a Queue row's arrows */
 #define POLL_MS 500
 /* A transcript page stays this long after the player has no lyrics: reading the next track's
  * empties them a moment. */
@@ -57,11 +59,16 @@ static struct {
      * scroll view and text, Chapters' page and scroll view, the lyrics page and the hidden view it
      * waits in */
     void *win, *slide, *dots, *desc_view, *desc_text, *ch_page, *ch_view, *lyric, *shelf;
+    void *bar, *line[2]; /* the progress bar, and the title and show under the art, which span it */
+    void *q_page, *q_view;   /* the Queue page and its scroll view */
+    unsigned q_sig, q_n;     /* the queue as the page shows it (q_sign), its Up Next rows */
+    unsigned q_idx[QUEUE_ROWS]; /* their queue indices, in play order */
     char *desc;
     int lit, shown_count;
     unsigned shown_desc, shown_rows; /* the track each page shows, ~0 to build again */
     unsigned lyric_at;               /* the transcript last wanted (or out) */
     char *named;                     /* the title title_fill made from a file's name */
+    int skip[2];                     /* the skip lengths, back and forward, once read (seconds) */
 } pc;
 
 /* The local track playing or paused, else 0. */
@@ -151,11 +158,69 @@ static void hold(int dir) {
     chapter_jump(dir);
 }
 
-/* A press: back SKIP_BACK_S or on SKIP_FWD_S, within the track. */
+/* The skip lengths (the user's, 2026-11-12): each of the two chosen from SKIPS in the ⋯ menu, the
+ * Play/Pause hold menu and Playback settings, saved as Q2POD SKIPBACK and SKIPFWD (seconds);
+ * SKIP_BACK_S and SKIP_FWD_S until then. Now Playing's buttons show theirs (play_back<s>,
+ * play_fwd<s>: tools/ipod.py PC_ICONS). */
+static const int SKIPS[] = { 5, 10, 15, 30, 45, 60 };
+#define SKIP_N (int)(sizeof SKIPS / sizeof *SKIPS)
+static const char *const SKIP_KEY[2] = { "SKIPBACK", "SKIPFWD" };
+
+int skip_count(void) { return SKIP_N; }
+int skip_at(int i) { return SKIPS[i < 0 ? 0 : i >= SKIP_N ? SKIP_N - 1 : i]; }
+
+/* A button's length (fwd 0 back, 1 forward), in seconds. */
+int skip_seconds(int fwd) {
+    fwd = !!fwd;
+    if (!pc.skip[fwd]) {
+        int def = fwd ? SKIP_FWD_S : SKIP_BACK_S, s = config_value("Q2POD", SKIP_KEY[fwd], 100, def), i = 0;
+        while (i < SKIP_N && SKIPS[i] != s) ++i;
+        pc.skip[fwd] = i < SKIP_N ? s : def;
+    }
+    return pc.skip[fwd];
+}
+
+/* Its place in SKIPS. */
+int skip_index(int fwd) {
+    int s = skip_seconds(fwd), i = 0;
+    while (i < SKIP_N - 1 && SKIPS[i] != s) ++i;
+    return i;
+}
+
+/* Now Playing's two buttons, each its length's glyph. */
+static void skip_icons(void) {
+    char img[24];
+    for (int fwd = 0; pc.win && fwd < 2; ++fwd) {
+        void *b = widget_lookup(pc.win, fwd ? "img_pc_fwd" : "img_pc_back", 1);
+        tk_snprintf(img, sizeof img, fwd ? "play_fwd%d" : "play_back%d", skip_seconds(fwd));
+        if (b && tk_strcmp(widget_get_prop_str(b, "image", ""), img)) image_base_set_image(b, img);
+    }
+}
+
+/* A button's length set to s seconds, kept. */
+void skip_set(int fwd, int s) {
+    fwd = !!fwd;
+    pc.skip[fwd] = s;
+    write_int_config(s, "Q2POD", SKIP_KEY[fwd]);
+    skip_icons();
+}
+
+/* A button's length on to the next in SKIPS (the last back to the first); returns it. */
+int skip_cycle(int fwd) {
+    skip_set(fwd, SKIPS[(skip_index(fwd) + 1) % SKIP_N]);
+    return skip_seconds(fwd);
+}
+
+/* A row's text for a button's length: "Skip Back: 5 s". */
+void skip_label(int fwd, char *out, unsigned size) {
+    tk_snprintf(out, size, "%s: %d s", fwd ? "Skip Forward" : "Skip Back", skip_seconds(fwd));
+}
+
+/* A press: back or on the buttons' lengths (skip_seconds), within the track. */
 static void skip(int dir) {
     int sec = np_second(), total = 0, now = -1;
     if (sec < 0 || player_playtime_and_length(&now, &total) < 0) return;
-    int to = sec + (dir > 0 ? SKIP_FWD_S : -SKIP_BACK_S);
+    int to = sec + (dir > 0 ? skip_seconds(1) : -skip_seconds(0));
     if (to < 0) to = 0;
     if (total > 0 && to >= total) to = total - 1; /* the end: on to the next track */
     np_seek(to);
@@ -218,7 +283,7 @@ int podcast_media(unsigned key) {
     return 1;
 }
 
-/* Now Playing's buttons beside the art: 15 s back and 30 s on in any local track; the previous or
+/* Now Playing's buttons beside the art: skip_seconds back and on in any local track; the previous or
  * next chapter in a spoken one, as the side buttons' holds, else the previous or next track.
  * Returns 0: a STOP would keep the slide_view's grab (rate_fav_click). */
 static int button_tap(void *ctx, void *event) {
@@ -402,10 +467,29 @@ static char *rec_set(void *r, int field, const char *s) {
 #endif
 }
 
-/* A local track without a title of its own (a song played from Folder, as every Pocket episode is):
- * the title the player reads from its file; until then, and for a file without one, a spoken
- * track's name as a title (name_title). Without an artist, a spoken one's is its show (the album
- * its file names), another's its file's. Now Playing, the lock screen and View Queue then name the
+/* Whether title is only the file's name, with or without its extension: what stock's folder
+ * listing gives a track it hasn't read (each episode Pocket plays from its Up Next playlist), not
+ * a title of its own. */
+static int name_only(const char *title, const char *name) {
+    if (!title || !name) return 0;
+    const char *dot = strrchr(name, '.');
+    unsigned n = dot && dot != name ? (unsigned)(dot - name) : strlen(name);
+    return !strcmp(title, name) || (strlen(title) == n && !strncmp(title, name, n));
+}
+
+/* Whether label w shows s already (a text too long to compare counts as shown, so a long title isn't
+ * set again every pass, which would start its scroll over). */
+static int shows(void *w, const char *s) {
+    char now[512] = "";
+    if (strlen(s) >= sizeof now - 8) return 1;
+    widget_get_text_utf8(w, now, sizeof now);
+    return !strcmp(now, s);
+}
+
+/* A local track without a title of its own (a song played from Folder, as every Pocket episode is,
+ * its title only its file's name): the title the player reads from its file; until then, and for a
+ * file without one, a spoken track's name as a title (name_title). Without an artist, a spoken
+ * one's is its show (the album its file names), another's its file's. Now Playing, the lock screen and View Queue then name the
  * episode, not its file. Every UI pass: it is cheap, and the player reads a file's tags just as it
  * starts. */
 static void title_fill(void) {
@@ -414,10 +498,10 @@ static void title_fill(void) {
     if (!r || I(r, REC_TYPE) != 8 || !P(r, REC_PATH)) return;
     const char *own = P(r, REC_TITLE), *artist = P(r, REC_ARTIST);
     int named = pc.named && own == pc.named, voice = spoken(P(r, REC_PATH)), changed = 0;
-    if (!own || !*own || named) {
+    if (!own || !*own || named || name_only(own, P(r, REC_NAME))) {
         const char *tag = now_tag(r, REC_TITLE);
         char buf[256];
-        if (tag != own && tag && *tag) { /* the player has read the file */
+        if (tag != own && tag && *tag && !name_only(tag, P(r, REC_NAME))) { /* the player read it */
             changed = rec_set(r, REC_TITLE, tag) != 0;
             pc.named = 0;
         } else if (!named && voice && P(r, REC_NAME)) {
@@ -432,13 +516,15 @@ static void title_fill(void) {
                                                                                 : 0;
         if (show && rec_set(r, REC_ARTIST, show)) changed = 1;
     }
-    if (!changed || !pc.win) return;
+    /* an episode's labels kept to its record each pass: stock writes them again as it reads the
+     * file (its name, for one it read no title from) after they were set here */
+    if (!pc.win || (!changed && !voice)) return;
     void *t = widget_lookup(pc.win, "scrlabel_title", 1),
          *a = widget_lookup(pc.win, "scrlabel_artist", 1);
     const char *title = P(r, REC_TITLE);
     artist = P(r, REC_ARTIST);
-    if (t && title && *title) widget_set_text_utf8(t, title);
-    if (a && artist && *artist) widget_set_text_utf8(a, artist);
+    if (t && title && *title && (changed || !shows(t, title))) widget_set_text_utf8(t, title);
+    if (a && artist && *artist && (changed || !shows(a, artist))) widget_set_text_utf8(a, artist);
 }
 
 /* A spoken track's description, beside it: <folder>/.description/<name>.txt (q2-pocket writes
@@ -472,7 +558,7 @@ static void desc_load(void *r) {
 static int pages_gone(void *win, void *event) {
     if (win == pc.win)
         pc.win = pc.slide = pc.dots = pc.desc_view = pc.desc_text = pc.ch_page = pc.ch_view =
-            pc.lyric = pc.shelf = 0;
+            pc.lyric = pc.shelf = pc.bar = pc.line[0] = pc.line[1] = pc.q_page = pc.q_view = 0;
     return 0;
 }
 
@@ -496,7 +582,16 @@ void podcast_attach(void *win) {
     pc.ch_view = widget_lookup(win, "view_pc_chapters_scroll", 1);
     pc.lyric = widget_lookup(win, "view_lyric", 1);
     pc.shelf = widget_lookup(win, "view_pc_shelf", 1);
+    /* stock's hit test skips insensitive widgets, not hidden ones: the hidden shelf over the pages
+     * would take every tap and swipe on them (tools/ipod.py also builds it so, off the screen) */
+    if (pc.shelf) widget_set_sensitive(pc.shelf, 0);
     if (pc.lyric && P(pc.lyric, W_PARENT) != pc.shelf) pc.lyric = 0; /* not this build's page */
+    pc.bar = widget_lookup(win, "slider_play", 1);
+    pc.q_page = widget_lookup(win, "view_pc_queue", 1);
+    pc.q_view = widget_lookup(win, "view_pc_queue_scroll", 1);
+    pc.q_sig = 0;
+    pc.line[0] = widget_lookup(win, "scrlabel_title", 1);
+    pc.line[1] = widget_lookup(win, "scrlabel_artist", 1);
     pc.lyric_at = (unsigned)time_now_ms();
     pc.shown_desc = pc.shown_rows = ~0u;
     for (int b = 0; b < B_N; ++b) {
@@ -504,6 +599,7 @@ void podcast_attach(void *win) {
         if (w) widget_on(w, EVT_CLICK, button_tap, (void *)(long)b);
     }
     dots_count();
+    skip_icons();
     widget_on(win, EVT_DESTROY, pages_gone, win);
     pc.polled = 0; /* podcast_poll fills them on its next pass */
 }
@@ -606,8 +702,105 @@ static void rows_light(void) {
     }
 }
 
+/* A queued track's title for the Queue page: its own, else its file's name as a title. */
+static const char *queue_title(void *r, char *buf, unsigned size) {
+    const char *own = P(r, REC_TITLE), *name = P(r, REC_NAME);
+    if (own && *own && !name_only(own, name)) return own;
+    name_title(name ? name : "", buf, size);
+    return buf;
+}
+
+/* The Queue page's tap on a row (ctx: its place, 0 the playing track): that track plays, and the one
+ * playing goes first in Up Next (playback_play_swap), as Pocket Casts' Up Next does. */
+static int queue_tap(void *ctx, void *event) {
+    int k = (int)(long)ctx;
+    void *q = P(mcl_pdeqplaylist, 0);
+    if (k <= 0 || (unsigned)k > pc.q_n || !q) return 0;
+    unsigned at = pc.q_idx[k - 1];
+    if (at >= deque_size(q)) return 0;
+    playback_play_swap(at);
+    press_stamp();
+    player_start_queue((int)at);
+    pc.q_sig = 0; /* shown again */
+    return 0;
+}
+
+/* A Queue row's arrow (ctx: the Up Next row, negative for its down arrow): it swaps with the row
+ * above or below (playback_raise). */
+static int queue_arrow(void *ctx, void *event) {
+    int k = (int)(long)ctx;
+    if (!playback_raise(k < 0 ? (unsigned)(-k) : (unsigned)k)) toast("This queue can't be reordered");
+    pc.q_sig = 0;
+    return 0;
+}
+
+/* The queue as the page would show it: the playing track, Up Next's indices, the queue. */
+static unsigned queue_sign(unsigned *idx, unsigned *n) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    *n = q ? playback_queue_rows(idx, QUEUE_ROWS) : 0;
+    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)idx, *n * sizeof *idx);
+    unsigned at[2] = { (unsigned)MCL(MCL_POS), q ? deque_size(q) : 0u };
+    h = hash_bytes(h, (const unsigned char *)at, sizeof at);
+    return h | 1;
+}
+
+/* The Queue page: the playing track first, in white, then Up Next in the order it plays, each with
+ * an up and a down arrow beside it (none up on the first, none down on the last). A tap plays a row
+ * (queue_tap). Built again when the queue, its order or the playing track changes. */
+static void queue_show(void) {
+    unsigned idx[QUEUE_ROWS], n, sig = queue_sign(idx, &n);
+    if (sig == pc.q_sig) return;
+    pc.q_sig = sig;
+    pc.q_n = n;
+    memcpy(pc.q_idx, idx, n * sizeof *idx);
+    void *view = pc.q_view, *q = P(mcl_pdeqplaylist, 0), *now = local_now();
+    int w = I(view, W_W), h = I(view, W_H), y = 0;
+    char buf[256];
+    widget_destroy_children(view);
+    if (now) {
+        void *item = list_item_create(view, 0, 0, w, ROW_H);
+        widget_use_style(item, "s_listitem_black");
+        void *t = label(item, PAGE_X, 0, w - 2 * PAGE_X, ROW_H, "s_scrlabel_white20l", 16, 0xffffffffu);
+        widget_set_text_utf8(t, queue_title(now, buf, sizeof buf));
+        y = ROW_H;
+    }
+    if (!n) {
+        void *none = label(view, PAGE_X, y, w - 2 * PAGE_X, h - y, "s_scrlabel_white20c", 16, GREY);
+        widget_set_text_utf8(none, now ? "Nothing after this one" : "Nothing playing");
+    }
+    for (unsigned i = 0; i < n; ++i, y += ROW_H) {
+        void *item = list_item_create(view, 0, y, w - 2 * ARROW_W, ROW_H);
+        widget_use_style(item, "s_listitem_black");
+        void *t = label(item, PAGE_X, 0, w - 2 * ARROW_W - PAGE_X, ROW_H, "s_scrlabel_white20l", 16, GREY);
+        widget_set_text_utf8(t, idx[i] < deque_size(q) ? queue_title(deque_at(q, idx[i]), buf, sizeof buf) : "");
+        widget_on(item, EVT_CLICK, queue_tap, (void *)(long)(i + 1));
+        for (int down = 0; down < 2; ++down) {
+            if (down ? i + 1 == n : !i) continue;
+            void *a = image_create(view, w - (2 - down) * ARROW_W, y, ARROW_W, ROW_H);
+            image_base_set_image(a, down ? "play_qdown" : "play_qup");
+            image_set_draw_type(a, IMAGE_DRAW_CENTER);
+            widget_set_prop_str(a, "clickable", "true");
+            widget_on(a, EVT_CLICK, queue_arrow, (void *)(long)(down ? -(int)(i + 1) : (int)i));
+        }
+    }
+    widget_set_prop_int(view, "virtual_h", y > h ? y : h);
+}
+
+/* The title and the show span the progress bar, as wide as it is (navigation.c narrows it for a
+ * long track's times), whatever stock's page code makes them. */
+static void rows_span(void) {
+    if (!pc.bar) return;
+    int x = I(pc.bar, W_X), w = I(pc.bar, W_W);
+    for (int i = 0; i < 2; ++i) {
+        void *t = pc.line[i];
+        if (t && (I(t, W_X) != x || I(t, W_W) != w)) widget_move_resize(t, x, I(t, W_Y), w, I(t, W_H));
+    }
+}
+
 static void pages_poll(void *r, unsigned now) {
     if (!pc.win) return;
+    rows_span();
+    if (pc.q_view) queue_show();
     if (pc.desc_view && pc.desc_text && pc.shown_desc != pc.track) {
         pc.shown_desc = pc.track;
         desc_load(r);
@@ -658,3 +851,59 @@ void podcast_poll(void) {
         read_start(r);
     pages_poll(r, now);
 }
+
+/* A skip length row's tap (ctx: its label, named skip_back or skip_fwd): the next length, shown on
+ * the row, its icon too. */
+static int skip_row_tap(void *ctx, void *event) {
+    void *label = ctx, *button = P(label, W_PARENT);
+    int fwd = !tk_strcmp(widget_get_prop_str(label, "name", ""), "skip_fwd");
+    char text[32], img[24];
+    skip_cycle(fwd);
+    tk_snprintf(img, sizeof img, fwd ? "play_fwd%d" : "play_back%d", skip_seconds(fwd));
+    for (unsigned j = 0, k = widget_count_children(button); j < k; ++j) {
+        void *c = widget_get_child(button, j);
+        if (!tk_strcmp(widget_get_type(c), "image")) image_base_set_image(c, img);
+    }
+    skip_label(fwd, text, sizeof text);
+    widget_set_text_utf8(label, text);
+    return 0;
+}
+
+/* Two rows setting the skip lengths, each a tap on to the next (skip_cycle), at the end of view. */
+static void skip_rows(void *view) {
+    char text[32], img[24];
+    for (int fwd = 0; fwd < 2; ++fwd) {
+        tk_snprintf(img, sizeof img, fwd ? "play_fwd%d" : "play_back%d", skip_seconds(fwd));
+        void *label = list_row(view, img, 0, 0);
+        widget_set_name(label, fwd ? "skip_fwd" : "skip_back");
+        widget_use_style(label, "s_scrlabel_white20l");
+        widget_resize(label, 253, I(label, W_H));
+        skip_label(fwd, text, sizeof text);
+        widget_set_text_utf8(label, text);
+        widget_on(P(label, W_PARENT), EVT_CLICK, skip_row_tap, label);
+    }
+}
+
+/* Now Playing's ⋯ page (onlinematch.c ringnav_playermore), Q2 Podcast's (the user's, 2026-11-12):
+ * stock's Download Cover & Lyrics and Look up Artist go, Look up Album is Look up Podcast (an
+ * episode's album is its show), and the skip lengths follow. view holds stock's PLAYMORE_COUNT rows,
+ * by position (PLAYMORE_ROWS gives each its kind); stock's click reads a row's kind from its
+ * button's name, so the rows left keep theirs. */
+void podcast_more(void *view) {
+    void *gone[PLAYMORE_COUNT];
+    unsigned n = 0;
+    for (unsigned i = 0; i < PLAYMORE_COUNT && i < widget_count_children(view); ++i) {
+        int kind = ((const int *)PLAYMORE_ROWS)[i];
+        void *row = widget_get_child(view, i);
+        if (kind == PLAYMORE_SEARCH || kind == PLAYMORE_ARTIST)
+            gone[n++] = row;
+        else if (kind == PLAYMORE_ALBUM)
+            stock_row_as(row, 0, "Look up Podcast");
+    }
+    for (unsigned i = 0; i < n; ++i) widget_destroy(gone[i]);
+    skip_rows(view);
+}
+
+/* Playback settings (navigation.c ringnav_audioset): the skip lengths, last. */
+void podcast_playback_rows(void *view) { skip_rows(view); }
+

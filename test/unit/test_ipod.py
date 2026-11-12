@@ -520,8 +520,8 @@ def audited(monkeypatch):
 
 def test_playing_stock(audited):
     """Q2 Podcast's Now Playing: the top row's More and "3 of 12"; the slide area from PC_TOP, its first page the art
-    centred, the title and show under it and the side buttons; Description, Chapters and the info, the info's column
-    centred; the lyrics hidden aside; the dots at PC_DOTS; the play mode hidden; stock's bar."""
+    centred, the title and show under it and the side buttons; Description, Chapters, the Queue and the info, the
+    info's column centred; the lyrics hidden aside; the dots at PC_DOTS; the play mode hidden; stock's bar."""
     root = ipod.decode(ipod.playing_stock(audited(stock_page())))
     n = named(root)
     assert n['scroll_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)'
@@ -529,10 +529,23 @@ def test_playing_stock(audited):
     assert n['label_lyricmsg'][2]['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
     art_x = (375 - ipod.PC_ART) // 2
     assert n['img_cover'][1] == [art_x, 0, ipod.PC_ART, ipod.PC_ART]
-    assert n['img_more'][1] == [ipod.NP_ICONS_END - ipod.NP_ICON, 0, ipod.NP_ICON, ipod.NP_TOP] and n['img_return'][1][0] == -200
+    assert n['img_more'][1] == [ipod.NP_ICONS_END - ipod.NP_ICON, 0, ipod.NP_ICON, ipod.NP_TOP]
+    # Return mirrors More at the row's left, its stock lift gone; "3 of 12" centred between them
+    assert n['img_return'][1] == [375 - ipod.NP_ICONS_END, 0, ipod.NP_ICON, ipod.NP_TOP]
+    assert not any(k.endswith('y_offset') for k in n['img_return'][2])
+    pos = n['label_ipod_pos']
+    assert pos[1][0] == 375 - ipod.NP_ICONS_END + ipod.NP_ICON and pos[1][0] * 2 + pos[1][2] == 375
+    assert pos[2]['style:normal:text_align_h'] == 'center'
     assert n['img_playmode'][2]['visible'] == 'false' and n['img_playmode'][1][0] == -200
-    assert [c[2]['name'] for c in n['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_info']
+    assert [c[2]['name'] for c in n['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_pc_queue',
+                                                          'view_info']
     assert [c[2]['name'] for c in n['view_pc_shelf'][3]] == ['view_lyric'] and n['view_pc_shelf'][2]['visible'] == 'false'
+    # hidden is not enough: stock's hit test skips only insensitive widgets (the shelf took every touch in 1.8.0)
+    assert n['view_pc_shelf'][2]['sensitive'] == 'false' and n['view_pc_shelf'][1][0] == -400
+    assert n['image_wait'][2]['sensitive'] == 'false'
+    for row in ('scrlabel_title', 'scrlabel_artist'):  # as wide as the bar, to and fro
+        assert n[row][1][0] == ipod.PC_BAR_X and n[row][1][2] == ipod.PC_BAR_W
+        assert (n[row][2]['loop'], n[row][2]['yoyo'], n[row][2]['lull']) == ('true', 'true', '0')
     album = {c[2]['name']: c for c in n['view_album'][3]}
     for (name, image), (x, y) in zip(zip(ipod.PC_SIDE, ipod.PC_IMAGES), ipod.pc_frames()):
         assert album[name][1] == [x, y, ipod.PC_BTN, ipod.PC_BTN] and album[name][2]['image' if name != 'img_fav' else 'name'] in (image, 'img_fav')

@@ -657,11 +657,14 @@ static const unsigned char rated_sorts[] = { SORT_RATING, SORT_ALBUM, SORT_ARTIS
 /* The library's Sort: Year after Artist; saved values are the enum's. */
 static const unsigned char all_sorts[] = { SORT_ALBUM, SORT_ARTIST, SORT_YEAR,
                                            SORT_ADDED, SORT_PLAYED, SORT_RANDOM };
+/* Q2 Podcast's Cover Flow (the user's, 2026-11-12): the shows, each an album (q2-pocket tags an
+ * episode's album as its show), whose tracks are its episodes on the card; music isn't in it. */
+#define COVERFLOW_WHERE PODCASTS_WHERE
 #define ALBUM_SQL "select id,album,songer," ALBUM_TRACK ",albumsonger from songtable" ALBUM_GROUP
 #define MUSIC_ALBUM_SQL "select case when ifnull(album,'')='' then -1 else id end," \
     "case when ifnull(album,'')='' then 'Unknown Album' else album end," \
     "songer," ALBUM_TRACK ",albumsonger from songtable where " \
-    MUSIC_WHERE ALBUM_GROUP
+    COVERFLOW_WHERE ALBUM_GROUP
 #define SORT_SQL ALBUM_SQL " order by "
 extern int ringnav_year_old(void);
 /* Albums by year, Playback settings' Year order (navigation.c): newest or oldest first, undated last. */
@@ -3927,11 +3930,11 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
 /* The two counts, a whole library's grouping among them, take seconds on a large one: off the UI
  * thread, and home_counts publishes them. -1: no answer. */
 static void *count_worker(void *unused) {
-    home.got_songs = library_count("select count(*) from songtable where " MUSIC_WHERE);
+    home.got_songs = library_count("select count(*) from songtable where " COVERFLOW_WHERE);
     /* Coverflow's rows: a row per album, and one for all the songs with no album */
     if (home.got_albums < 0)
         home.got_albums = library_count("select sum(e=0)+max(e) from (select ifnull(album,'')='' e "
-                                        "from songtable where " MUSIC_WHERE ALBUM_GROUP ")");
+                                        "from songtable where " COVERFLOW_WHERE ALBUM_GROUP ")");
     home.counting = 2;
     return 0;
 }

@@ -1144,6 +1144,7 @@ def summed(fw, job, state=LJ_DONE, **counts):
     assert job.toasts == [note(fw, 96, state=state, **counts)]
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, more_rows):
     disk = greatest_hits(fw, mcl, records)
     net = lrclib_answers(fw, One='[00:01.00] one\n', Three='[00:01.00] Mix : X\n[00:02.00] three\n')
@@ -1167,6 +1168,7 @@ def test_download_album_lyrics_from_the_more_page_to_the_card(fw, mcl, records, 
     assert not job.al.thread and not job.al.tracks
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     net = lrclib_answers(fw)
@@ -1181,6 +1183,7 @@ def test_a_press_while_it_runs_cancels_it(fw, mcl, records, more_rows):
     summed(fw, job, LJ_CANCELLED)
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_press_after_the_job_ended_leaves_it_to_the_timer(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     lrclib_answers(fw)
@@ -1194,6 +1197,7 @@ def test_a_press_after_the_job_ended_leaves_it_to_the_timer(fw, mcl, records, mo
     summed(fw, job, none=3)
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_second_job_counts_afresh(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     lrclib_answers(fw, One='[00:01.00] one\n')
@@ -1211,6 +1215,7 @@ def test_a_second_job_counts_afresh(fw, mcl, records, more_rows):
     assert job.toasts == [note(fw, 96, state=LJ_DONE, saved=1, none=2), note(fw, 96, state=LJ_DONE, none=2, had=1)]
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_usb_storage_stops_the_job_quietly(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     net = lrclib_answers(fw)
@@ -1223,6 +1228,7 @@ def test_usb_storage_stops_the_job_quietly(fw, mcl, records, more_rows):
     assert job.tick() == 0 and job.toasts == []
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_the_page_gone_the_job_runs_on_and_still_says_how_it_went(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     lrclib_answers(fw, One='[00:01.00] one\n')
@@ -1236,6 +1242,7 @@ def test_the_page_gone_the_job_runs_on_and_still_says_how_it_went(fw, mcl, recor
     summed(fw, job, saved=1, none=2)
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_no_wifi_no_job(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     job, more = Run(fw, wifi=0), More(fw)
@@ -1244,6 +1251,7 @@ def test_no_wifi_no_job(fw, mcl, records, more_rows):
     assert len(job.toasts) == 1 and not fw.calls('getMusicByAlbum') and not fw.calls('fw_pthread_create')
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_thread_that_wont_start_says_so(fw, mcl, records, more_rows):
     greatest_hits(fw, mcl, records)
     job, more = Run(fw, starts=False), More(fw)
@@ -1253,6 +1261,7 @@ def test_a_thread_that_wont_start_says_so(fw, mcl, records, more_rows):
     assert (job.al.thread, job.al.tracks, job.al.running) == (0, None, 0) and len(more.texts) == 1  # still its title
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_only_the_albums_songs_files_on_the_card_are_fetched(fw, mcl, records, more_rows):
     band = dict(album=b'Hits', album_artist=b'Band')  # one album by its album artist, whatever the folder
     playing = records.song(b'/m/1.flac', title=b'One', **band)
@@ -1269,6 +1278,7 @@ def test_only_the_albums_songs_files_on_the_card_are_fetched(fw, mcl, records, m
     assert job.al.job.total == 1 and titles(net) == ['One']
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_cue_album_has_no_songs_of_its_own(fw, mcl, records, more_rows):
     cue = dict(album=b'Live', path=b'/m/live.flac')
     playing = records.song(title=b'One', cue=(0, 300), **cue)
@@ -1279,6 +1289,7 @@ def test_a_cue_album_has_no_songs_of_its_own(fw, mcl, records, more_rows):
     assert len(job.toasts) == 1 and not job.start and fw.calls('getMusicByAlbum')
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_a_song_without_a_title_is_not_found_unasked(fw, mcl, records, more_rows):
     disk = greatest_hits(fw, mcl, records, records.song(b'/m/A/GH/03.flac', album=b'Greatest Hits', artist=b'A', disc=1, track=3))
     disk.files['/m/A/GH/03.flac'] = b''
@@ -1293,6 +1304,7 @@ def test_a_song_without_a_title_is_not_found_unasked(fw, mcl, records, more_rows
 
 
 @pytest.mark.parametrize('case', ['no window', 'no view', 'not stock rows', 'online', 'no album', 'not a song', 'no search row'])
+@pytest.mark.skip(reason="Q2 Podcast: Now Playing's ⋯ page has no Download Album Lyrics row (podcast.c podcast_more)")
 def test_the_row_only_for_a_playing_song_on_the_card_under_stocks_rows(fw, mcl, records, more_rows, case):
     song = records.song(b'/m/a.flac', album=b'' if case == 'no album' else b'Al', kind=4 if case == 'not a song' else 8)
     Queue(fw, mcl, [song], kind=0xf2 if case == 'online' else 0xf001)
