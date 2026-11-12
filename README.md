@@ -2,10 +2,12 @@
 
 A fork of [Q2 Pod](https://github.com/DiamondBond/q2-pod) 1.7.6 for podcasts and audiobooks. It has everything Q2 Pod has, and:
 
+- **Now Playing for podcasts:** the cover centred, with the star, 15 s back and the previous chapter down its left, AirPlay, 30 s on and the next chapter down its right; pages for the episode's **Description**, **Chapters**, details and **Transcript**, which follows the episode as it plays.
 - **Skip and chapters:** on an episode or a book, Next skips 30 seconds on and Previous 15 seconds back; hold one to jump between chapters.
-- **Description and Chapters** pages on Now Playing, after the track's details.
-- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, downloads Up Next for offline listening and cuts the ads; on its episodes, Now Playing's heart becomes the Pocket Casts star.
-- **AirPlay** in the App Store, to play what the Q2 plays on an AirPlay speaker.
+- **A podcast Library:** Podcasts, Episodes, Starred, Playlists, Recently Played and Audiobooks.
+- **Pocket on Home:** Home's Shortcut row opens the Pocket app straight away.
+- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, keeps the first ten of Up Next downloaded (or all of it, with a press), cuts the ads and brings each episode's transcript; on its episodes, Now Playing's star is Pocket Casts' star.
+- **AirPlay**, **Apple Music** and **Bandcamp** in the App Store, with every app Q2 Pod lists.
 
 Install it as Q2 Pod's own instructions below say, with the update file from [this repository's releases](https://github.com/group-a-study/q2-podcast/releases/latest); **Network Update** then installs Q2 Podcast's releases. What changed is in the [changelog](docs/changelog.md). Q2 Pod's README follows.
 

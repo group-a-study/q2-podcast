@@ -262,7 +262,7 @@ typedef struct {
     int settings_read, accent, minimal_accent, home, battery, home_rockbox, home_groovebox, theme,
         shortcut, rounded, light, light_day, /* light_day: Auto's answer for now (LIGHT=2) */
         keep_lit,                            /* Smart Awake (#57, keep_lit_poll) */
-        np_centred,                          /* Centred Now Playing (ringnav_ui_load) */
+        home_pan,                            /* Floating Cover: Split's art pans (coverflow.c) */
         keytone_hp,                          /* Click With Headphones (ringnav_buzzer) */
         scrub_single,                        /* Single Press Scrub (np_key) */
         theme_booted,                        /* theme_boot ran (ringnav_ui_load) */
@@ -448,7 +448,7 @@ enum {
     SETTING_ROUNDED,
     SETTING_LIGHT,
     SETTING_KEEPLIT,
-    SETTING_NPCENTRED,
+    SETTING_HOMEPAN,
     SETTING_KEYTONEHP,
     SETTING_SCRUBSINGLE,
     SETTING_TIMETITLE,
@@ -569,15 +569,19 @@ int pl_first(menu_t *m, int cur);
 void pl_fit(void *button);
 
 /* podcast.c: the side buttons on a spoken track (ringnav_keydown, ringnav, ringnav_keylong), Now
- * Playing's Description and Chapters pages and the poll filling them, and the heart as Pocket
- * Casts' star (ratings.c). navigation.c's spoken track, its seek and its second for them. */
+ * Playing's buttons, its Description, Chapters and transcript pages and the poll filling them, the
+ * star as Pocket Casts' (ratings.c, whose rate_fav_match keeps My Fav in step) and a Folder play's
+ * title. navigation.c's spoken track, its seek, its second and its pages for them. */
 int podcast_key(unsigned key, int phase);
 void podcast_attach(void *win);
 void podcast_poll(void);
 void podcast_heart(void *fav);
 int podcast_star(void *fav);
+int rate_fav_match(int on);
+void podcast_starred_sync(void);
 int spoken(const char *path);
 void np_seek(int to);
 int np_second(void);
+void *np_front(void);
 
 #endif

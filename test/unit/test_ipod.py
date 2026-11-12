@@ -487,16 +487,25 @@ def test_playing_page_three_lyric_lines_just_fit(monkeypatch):
 
 
 def stock_page():
+    """Stock's playing_page as playing_stock reads it: its widgets in their places (the shipped asset's tree)."""
     slider = dict(SLIDER)
+    info = [w(n, at=[0, 16 * i, 225, 16]) for i, n in enumerate(('label_album', 'label_genre', 'label_size', 'label_year'))]
     root = w('playing_page',
-             w('slide_view_view', w('slide_view', w('view_lrc', self_layout='default(x=0,y=0,w=100%,h=178)'),
-                                    w('label_lyricmsg', at=[0, 73, 225, 28]), w('scroll_lrc', self_layout='default(x=0,y=0,w=-10,h=-20)'),
-                                    at=[0, 0, 225, 198]), at=[80, 0, 225, 290]),
-             w('scrlabel_title'), w('scrlabel_artist'),
-             w('img_cover', at=[18, 0, 188, 188]), w('img_playstate', at=[52, 34, 120, 120]),
-             w('img_fav', at=[2, 129, 86, 73], draw_type='center'),
-             w('img_playmode', at=[0, 129, 86, 73], draw_type='default', x_offset='12', y_offset='3', other='kept'),
-             w('slider_play', kind='slider', at=[50, 208, 290, 82], **slider))
+             w('view_buttons', w('img_more', kind='image', at=[295, 0, 70, 60]),
+               w('img_playmode', kind='image', at=[0, 129, 86, 73], draw_type='default', x_offset='12', y_offset='3', other='kept'),
+               w('img_return', kind='image', at=[3, 0, 85, 60]), w('img_fav', kind='image', at=[2, 129, 86, 73], draw_type='center'),
+               at=[0, 0, 375, 210]),
+             w('scrlabel_title', at=[10, 198, 355, 20]), w('scrlabel_artist', at=[10, 224, 355, 16]),
+             w('label_playtime', at=[52, 266, 48, 14]), w('label_playlen', at=[288, 266, 48, 14]),
+             w('slide_view_view',
+               w('slide_view',
+                 w('view_album', w('img_cover', at=[18, 0, 188, 188]), w('img_playstate', at=[52, 34, 120, 120])),
+                 w('view_lyric', w('label_lyricmsg', at=[0, 73, 225, 28]),
+                   w('view_lrc', w('scroll_lrc', self_layout='default(x=0,y=0,w=-10,h=-20)'), self_layout='default(x=0,y=0,w=100%,h=178)')),
+                 w('view_info', *info), at=[0, 0, 225, 198]),
+               w('slide_indicator1', at=[0, 270, 100, 10], self_layout='default(x=0,y=270,w=100%,h=10)'), at=[80, 0, 225, 290]),
+             w('slider_play', kind='slider', at=[50, 208, 290, 82], **slider),
+             w('img_repeata', at=[50, 250, 3, 10]), w('img_repeatb', at=[50, 250, 3, 10]), w('image_wait', at=[165, 70, 54, 54]))
     return root
 
 
@@ -510,16 +519,30 @@ def audited(monkeypatch):
 
 
 def test_playing_stock(audited):
-    n = named(ipod.decode(ipod.playing_stock(audited(stock_page()))))
+    """Q2 Podcast's Now Playing: the top row's More and "3 of 12"; the slide area from PC_TOP, its first page the art
+    centred, the title and show under it and the side buttons; Description, Chapters and the info, the info's column
+    centred; the lyrics hidden aside; the dots at PC_DOTS; the play mode hidden; stock's bar."""
+    root = ipod.decode(ipod.playing_stock(audited(stock_page())))
+    n = named(root)
     assert n['scroll_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)'
     assert n['view_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert n['label_lyricmsg'][2]['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
-    assert n['img_cover'][1] == [22, 8, 180, 180] and n['img_playstate'][1] == [52, 38, 120, 120]
-    assert n['img_playmode'][1] == [375 - 2 - 86, 129, 86, 73]
-    assert n['img_playmode'][2] == {'name': 'img_playmode', 'draw_type': 'center', 'other': 'kept'}
-    assert n['img_fav'][1] == [2, 132, 86, 73]
+    art_x = (375 - ipod.PC_ART) // 2
+    assert n['img_cover'][1] == [art_x, 0, ipod.PC_ART, ipod.PC_ART]
+    assert n['img_more'][1] == [ipod.NP_ICONS_END - ipod.NP_ICON, 0, ipod.NP_ICON, ipod.NP_TOP] and n['img_return'][1][0] == -200
+    assert n['img_playmode'][2]['visible'] == 'false' and n['img_playmode'][1][0] == -200
+    assert [c[2]['name'] for c in n['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_info']
+    assert [c[2]['name'] for c in n['view_pc_shelf'][3]] == ['view_lyric'] and n['view_pc_shelf'][2]['visible'] == 'false'
+    album = {c[2]['name']: c for c in n['view_album'][3]}
+    for (name, image), (x, y) in zip(zip(ipod.PC_SIDE, ipod.PC_IMAGES), ipod.pc_frames()):
+        assert album[name][1] == [x, y, ipod.PC_BTN, ipod.PC_BTN] and album[name][2]['image' if name != 'img_fav' else 'name'] in (image, 'img_fav')
+    assert {'scrlabel_title', 'scrlabel_artist'} <= set(album) and n['slide_view_view'][1][1] == ipod.PC_TOP
+    assert ipod.PC_TOP + n['slide_indicator1'][1][1] == ipod.PC_DOTS
+    assert [c[1][0] for c in n['view_info'][3]] == [75] * 4
     assert n['slider_play'][1] == [50, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 290, ipod.NP_TOUCH]
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
+    assert [c[2]['name'] for c in root[3]] == ['view_buttons', 'label_playtime', 'label_playlen', 'slide_view_view', 'slider_play',
+                                               'img_repeata', 'img_repeatb', 'image_wait']
 
 
 def test_playing_stock_is_audited(audited):
@@ -1584,7 +1607,7 @@ def test_quiet_icon(monkeypatch, magick):
     # Stock's control icons trimmed, shrunk into a square, one flat grey (More's pressed state darker), centred on a
     # larger square.
     fills = {}
-    for name in ('play_more.png', 'play_fav.png', 'play_moredown.png'):
+    for name in ('play_more.png', 'play_moredown.png'):
         stock = b'stock ' + name.encode()
         monkeypatch.setitem(ipod.QUIET_ICONS, name, ipod.sha(stock))
         assert ipod.quiet_icon(name, stock) == b'png'
@@ -1596,7 +1619,12 @@ def test_quiet_icon(monkeypatch, magick):
         assert args[args.index('-background') + 1] == 'none', name  # on a clear square
         fills[name] = args[args.index('-fill') + 1]
     grey = lambda c: int(c.lstrip('#')[:2], 16)
-    assert fills['play_more.png'] == fills['play_fav.png'] and grey(fills['play_moredown.png']) < grey(fills['play_more.png'])
+    assert grey(fills['play_moredown.png']) < grey(fills['play_more.png'])
+    # Q2 Podcast: the hearts are Pocket Casts' star, drawn (assets/icons), not stock's shrunk
+    for name, star in ipod.STAR_ICONS.items():
+        stock = b'stock ' + name.encode()
+        monkeypatch.setitem(ipod.QUIET_ICONS, name, ipod.sha(stock))
+        assert ipod.quiet_icon(name, stock) == (ipod.ROOT/'assets/icons'/star).read_bytes() and not magick.calls, name
 
 
 def test_quiet_icon_is_audited(monkeypatch, magick):

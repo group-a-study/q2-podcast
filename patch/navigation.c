@@ -92,6 +92,9 @@ void ringnav_timezone_row(void *item, int i) {
     }
 }
 static int library_music __attribute__((section(".scratch")));
+/* library_music's Q2 Podcast scope: the podcasts alone (PODCASTS_WHERE), Library → Episodes' */
+#define LIBRARY_PODCASTS 2
+#define PODCASTS_WHERE "fileurl like '/mnt/mmc/podcasts/%'"
 static int library_first __attribute__((section(".scratch")));
 
 /* Failed exec in a forked child must not flush demo's copied stdio or run its exit handlers. */
@@ -138,7 +141,8 @@ static int library_query(int content, const char *db, const char *sql, void *row
     if (from) { /* library_first: the Unknown row's check, which one song answers */
         int n = tk_snprintf(filtered, sizeof filtered,
                             "%.*s from (select * from songtable where %s)%s%s", (int)(from - sql),
-                            sql, MUSIC_WHERE, from + 15, library_first ? " limit 1" : "");
+                            sql, library_music == LIBRARY_PODCASTS ? PODCASTS_WHERE : MUSIC_WHERE,
+                            from + 15, library_first ? " limit 1" : "");
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
     }
@@ -3527,12 +3531,25 @@ static void lyric_pad(void *lrc) {
 
 static unsigned np_track(void);
 
+/* The slide_view's page in front, else 0. Q2 Podcast's pages have no fixed places (Description
+ * and Chapters follow the art, the lyrics page, a transcript, comes last or not at all: podcast.c),
+ * so a check for a page looks at the page in front, not at an index. */
+void *np_front(void) {
+    return st.np_slide ? widget_get_child(st.np_slide,
+                                          (unsigned)widget_get_prop_int(st.np_slide, "value", 0))
+                       : (void *)0;
+}
+/* The lyrics page in front: the page holding scroll_lrc. */
+static int np_lyrics_front(void) {
+    void *page = st.np_lrc ? np_front() : (void *)0;
+    return page && (page == st.np_lrc || widget_lookup(page, "scroll_lrc", 1) == st.np_lrc);
+}
+
 /* The lyrics page in front: Now Playing on top, lit, not sliding and untouched, on the lyrics. */
 static int lyrics_shown(void) {
     void *wm = window_manager();
     return st.np_lrc && st.np_slide && usable() && window_manager_get_top_window(wm) == st.np_win &&
-           !window_manager_is_animating(wm) && !pointer_down() &&
-           widget_get_prop_int(st.np_slide, "value", 0) == 1;
+           !window_manager_is_animating(wm) && !pointer_down() && np_lyrics_front();
 }
 
 /* Stock's scroll animator on the lyrics stops, a drag's fling among them (stock
@@ -4391,7 +4408,7 @@ static void lyric_poll(void) {
         st.lyric_song = song;
         lyric_top(lrc);
     }
-    int page = lrc && st.np_slide && widget_get_prop_int(st.np_slide, "value", 0) == 1;
+    int page = lrc && np_lyrics_front();
     if (st.np_full && !page) np_full(0); /* full-screen lyrics end off their page */
     /* A swipe off the lyrics page drops the hold, so back on it they follow the song (fork-only:
      * upstream keeps the hold until Now Playing goes; the user keeps this rule). */
@@ -4482,8 +4499,8 @@ static void lyric_poll(void) {
  * the wheel raw, glides them to the next or previous row's top, ahead of scrub and the volume. */
 static int np_lyrics(unsigned key) {
     void *lrc = st.np_lrc;
-    if (!st.np_slide || !lrc || widget_get_prop_int(st.np_slide, "value", 0) != 1 ||
-        !widget_count_children(lrc) || mclGetLyricSize() <= 0)
+    if (!st.np_slide || !lrc || !np_lyrics_front() || !widget_count_children(lrc) ||
+        mclGetLyricSize() <= 0)
         return 0;
     lyric_hold();
     lyric_pad(lrc);
@@ -4785,8 +4802,7 @@ int ringnav_playing(void *win, void *ctx) {
      * once after the open. Fit from the file's own length at open if that shows. */
     np_fit_due((void *)0);
     np_sync(win);
-    podcast_attach(win); /* before the visualizer, which stays the last page */
-    visualizer_attach(win);
+    podcast_attach(win); /* Q2 Podcast's pages; it has no visualizer page */
     airplay_button(win);
     return result;
 }
@@ -6359,7 +6375,7 @@ static void setting_text(int i) {
         return;
     }
     static const char *const toggles[] = { "Rounded Corners",       0,
-                                           "Smart Awake",           "Centred Now Playing",
+                                           "Smart Awake",           "Floating Cover",
                                            "Click With Headphones", "Single Press Scrub",
                                            "Time in Title" };
     if (i == 5 || i >= 7) {
@@ -6488,7 +6504,7 @@ static int setting_click(void *ctx, void *event) {
 static int genre_over(void) {
     void *s = st.genre_label;
     if (!s || !g_backlight_status || window_manager_get_top_window(window_manager()) != st.np_win ||
-        widget_get_prop_int(st.np_slide, "value", 0) != 2) /* view_info */
+        tk_strcmp(widget_get_prop_str(np_front(), "name", ""), "view_info"))
         return 0;
     return I(s, HSCROLL_TEXT_W) + 4 - I(s, W_W); /* stock's two 2 px margins, as marq_moved */
 }
@@ -6679,7 +6695,7 @@ static void setting_row(void *view, int i) {
  * Smart Awake and Night Shift (the brightness icon, opening its slider page, crossfade.c) join
  * them, then Appearance and Coverflow, each opening stock's page again (display_open) with its
  * stock rows dropped and its own instead: Theme, Light Mode, Accent, Corners, Home, Shortcut,
- * Battery, Time in Title, Centred Now Playing; Artist View, Coverflow Sort and Refresh Coverflow.
+ * Battery, Time in Title, Floating Cover; Artist View, Coverflow Sort and Refresh Coverflow.
  * Controls is System settings' row (ringnav_systemset) on the same page: the wheel, the buttons and
  * what the buttons do. The value rows show it in the label and have no chevron, since they change
  * in place. ponytail: stock's page opened over itself; its own rows' state is never touched on a
@@ -8004,6 +8020,20 @@ static void fav_titles(void *list, int n) {
     free(slot);
     if (songs) deque_destroy(songs);
 }
+/* Q2 Podcast's Starred and Recently Played (My Fav and Recent): their spoken songs alone, other
+ * rows (a folder) kept, the displayed copies filtered as music_records does. */
+static int spoken_records(void *list) {
+    void *keep = _create_deque("stSongInfo");
+    deque_init(keep);
+    for (unsigned i = 0; i < deque_size(list); ++i) {
+        void *r = deque_at(list, i);
+        if (I(r, REC_TYPE) != 8 || spoken(P(r, REC_PATH))) _deque_push_back(keep, r);
+    }
+    deque_clear(list);
+    deque_assign(list, keep);
+    deque_destroy(keep);
+    return (int)deque_size(list);
+}
 /* Playlists bypass songtable; filter their displayed copies, never their stored rows. */
 static int music_records(void *list, int discovery) {
     void *music = _create_deque("stSongInfo");
@@ -8034,13 +8064,18 @@ static int songs_load(void) {
 int ringnav_localclass(int cls) {
     I(g_artist_type, 0) = I(artist_type, 0) == 1;
     int saved = library_music;
-    library_music = 1;
+    /* Q2 Podcast's Library: Recently Added is Episodes, the podcasts' (LIBRARY_PODCASTS); Starred
+     * (My Fav) takes in Pocket Casts' stars first (podcast.c) */
+    library_music = cls == CLASS_ADDED ? LIBRARY_PODCASTS : 1;
+    if (cls == 0xf00a) podcast_starred_sync();
     int n = cls == 0xf001 ? songs_load() : stock_localclass_trampoline(cls);
     void *list = P(p_deque_showlist, 0), *dir = P(tools_pdeq_directory, 0), *a = album_opened();
     if (n > 0 && cls == 0xff20) n = music_records(list, 0);
     /* These stored lists bypass songtable too. Keep Discovery out of their displayed copies,
-     * without removing favourites/history or changing explicit playlist and folder queues. */
-    if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) n = music_records(list, 1);
+     * without removing favourites/history or changing explicit playlist and folder queues. Q2
+     * Podcast's Starred and Recently Played hold the spoken ones alone. */
+    if (n > 0 && cls == 0xf008) n = music_records(list, 1);
+    if (n > 0 && (cls == 0xf00a || cls == 0xf007)) n = spoken_records(list);
     if (n > 0 && cls == 0xff10 && a) album_only(list, a, 0), n = (int)deque_size(list);
     if (n > 0 && cls == CLASS_ALBUMS) n = coverflow_split(list);
     if (n > 0 && (cls == 0xf00a || cls == 0xf008 || cls == 0xf007)) /* My Fav, Frequent, Recent */

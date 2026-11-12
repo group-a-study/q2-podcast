@@ -205,14 +205,18 @@ static int air_gone(void *win, void *event) {
     return 0;
 }
 
-/* iPod Now Playing (ringnav_playing): the AirPlay button left of shuffle, in its row and size. */
+/* Now Playing (ringnav_playing): Q2 Podcast's page has the button's frame, img_airplay, top right
+ * of the art (tools/ipod.py PC_SIDE); another page gets one left of shuffle, in its row and size. */
 void airplay_button(void *win) {
-    void *mode = widget_lookup(win, "img_playmode", 1), *fav = widget_lookup(win, "img_fav", 1);
-    if (!mode) return;
-    /* the row's own gap between order's frame and favourite's: 6 px, Classic's none (tools/ipod.py) */
-    int gap = fav ? I(fav, W_X) - I(mode, W_X) - I(mode, W_W) : 6;
-    void *b = image_create(P(mode, W_PARENT), I(mode, W_X) - I(mode, W_W) - gap, I(mode, W_Y),
-                           I(mode, W_W), I(mode, W_H));
+    void *b = widget_lookup(win, "img_airplay", 1);
+    if (!b) {
+        void *mode = widget_lookup(win, "img_playmode", 1), *fav = widget_lookup(win, "img_fav", 1);
+        if (!mode) return;
+        /* the row's own gap between order's frame and favourite's: 6 px, Classic's none */
+        int gap = fav ? I(fav, W_X) - I(mode, W_X) - I(mode, W_W) : 6;
+        b = image_create(P(mode, W_PARENT), I(mode, W_X) - I(mode, W_W) - gap, I(mode, W_Y),
+                         I(mode, W_W), I(mode, W_H));
+    }
     image_set_draw_type(b, IMAGE_DRAW_CENTER);
     widget_set_prop_str(b, "clickable", "true");
     widget_on(b, EVT_CLICK, air_open, 0);

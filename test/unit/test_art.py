@@ -411,7 +411,7 @@ def test_the_rating_hearts_are_the_panels_size_and_ink():
         w, h, on = pixels(got[f'classic_light_heart_on_{half}'])
         assert (w, h) == (32, 30) and on(16, 16) == (*ink, 255)  # filled
         _, _, off = pixels(got[f'classic_light_heart_off_{half}'])
-        assert off(16, 16)[3] == 0 and off(16, 26)[:3] == ink and off(16, 26)[3] > 200  # its outline: the stroke at the point
+        assert off(16, 16)[3] == 0 and off(16, 2)[:3] == ink and off(16, 2)[3] > 200  # its outline: Q2 Podcast's star's top point
         assert on(0, 0)[3] == 0 == off(0, 0)[3]
         assert max(x for x in range(32) if any(off(x, y)[3] for y in range(30))) == 31  # the stroke reaches its box's width
 

@@ -1,7 +1,9 @@
 /* Podcasts and audiobooks (docs/internals.md#podcasts-on-now-playing): on a spoken track the side
- * buttons skip back and forward, and held they jump between its chapters; Now Playing's heart stars
- * a Pocket episode in Pocket Casts (q2-pocket); and Now Playing has Description and Chapters pages
- * after its info page. */
+ * buttons skip back and forward, and held they jump between its chapters. Now Playing (Q2 Podcast's
+ * page, tools/ipod.py playing_stock) has the same as buttons beside the art; its star stars a
+ * Pocket episode in Pocket Casts (q2-pocket); its Description and Chapters pages follow the art,
+ * and the lyrics page is the episode's transcript, there only while the track has one. A track
+ * played from Folder takes the title its file has. */
 #include "navigation.h"
 
 /* PC_HOLD_MS, SKIP_BACK_S and SKIP_FWD_S are in offsets.inc. A key-down PC_REPEAT_MS after the
@@ -22,14 +24,19 @@
 #define STAR_WAIT_MS 60000
 #define STARRED_MAX (64 * 1024)
 #define DESC_MAX (16 * 1024)
-#define PAGE_H 186 /* tools/ipod.py NP_SLIDE_H from the lyrics' top, as visualizer.c's VIS_H */
-#define PAGE_X 16  /* tools/ipod.py NP_MARGIN */
+#define PAGE_X 16 /* tools/ipod.py NP_MARGIN */
 #define ROW_H 44
 #define TIME_W 76
 #define ROWS_MAX 200 /* the Chapters page's rows; a hold still reaches every chapter */
 #define POLL_MS 500
+/* A transcript page stays this long after the player has no lyrics: reading the next track's
+ * empties them a moment. */
+#define TRANSCRIPT_GONE_MS 2000
 #define GREY 0xffaaaaaau
 enum { CH_NONE, CH_READING, CH_DONE };
+enum { B_BACK, B_FWD, B_CHAPTER_BACK, B_CHAPTER_FWD, B_N };
+static const char *const button_names[B_N] = { "img_pc_back", "img_pc_fwd", "img_pc_chapprev",
+                                               "img_pc_chapnext" };
 
 static struct {
     /* the side key whose press is ours: its press's time, its last down's, whether its hold ran */
@@ -41,23 +48,33 @@ static struct {
     int seen;               /* track and since hold a look's (0 before the first) */
     chapters *reading;
     chapter *rows;
-    /* q2-pocket's starred list as last read (stat words: mtime, its ns, size), a star asked for */
+    /* q2-pocket's starred list as last read (stat words: mtime, its ns, size), a star asked for,
+     * and the track and star My Fav was last put in step with */
     char *starred;
-    unsigned stamp[3], ask_key, ask_at;
-    int ask_on, painted;
-    /* Now Playing's pages: the window, its slide_view, the two scroll views and the text */
-    void *win, *slide, *desc_view, *desc_text, *ch_view;
+    unsigned stamp[3], ask_key, ask_at, stat_at, matched_key;
+    int ask_on, matched_on, painted;
+    /* Now Playing's pages (tools/ipod.py): the window, its slide_view and dots, Description's
+     * scroll view and text, Chapters' page and scroll view, the lyrics page and the hidden view it
+     * waits in */
+    void *win, *slide, *dots, *desc_view, *desc_text, *ch_page, *ch_view, *lyric, *shelf;
     char *desc;
-    int desc_at, lit, shown_count;
+    int lit, shown_count;
     unsigned shown_desc, shown_rows; /* the track each page shows, ~0 to build again */
+    unsigned lyric_at;               /* the transcript last wanted (or out) */
+    char *named;                     /* the title title_fill made from a file's name */
 } pc;
 
-/* The local track playing or paused when it is a spoken one (navigation.c spoken), else 0. */
-static void *spoken_now(void) {
+/* The local track playing or paused, else 0. */
+static void *local_now(void) {
     unsigned at, n, type = (unsigned)MCL(MCL_TYPE), s = (unsigned)mclGetPlayStatus();
     if (media_owner() != 1 || (s != 2 && s != 3)) return 0;
     if (type != 1 && (type & 0xf000) != 0xf000) return 0; /* a stream (rate_track) */
-    void *r = queue_now(&at, &n);
+    return queue_now(&at, &n);
+}
+
+/* The local track playing or paused when it is a spoken one (navigation.c spoken), else 0. */
+static void *spoken_now(void) {
+    void *r = local_now();
     return r && spoken(P(r, REC_PATH)) ? r : 0;
 }
 
@@ -201,10 +218,28 @@ int podcast_media(unsigned key) {
     return 1;
 }
 
+/* Now Playing's buttons beside the art: 15 s back and 30 s on in any local track; the previous or
+ * next chapter in a spoken one, as the side buttons' holds, else the previous or next track.
+ * Returns 0: a STOP would keep the slide_view's grab (rate_fav_click). */
+static int button_tap(void *ctx, void *event) {
+    int b = (int)(long)ctx;
+    void *r = local_now();
+    if (!r) return 0;
+    if (b == B_BACK || b == B_FWD)
+        skip(b == B_FWD ? 1 : -1);
+    else if (spoken(P(r, REC_PATH)))
+        hold(b == B_CHAPTER_FWD ? 1 : -1);
+    else
+        b == B_CHAPTER_FWD ? player_next_music() : player_prev_music();
+    return 0;
+}
+
 /* q2-pocket's starred list, read again when it changes; 0 (none) while q2-pocket isn't signed in.
- */
+ * Its stat is looked at once a POLL_MS at most. */
 static void starred_load(void) {
-    unsigned s[36] = { 0 };
+    unsigned s[36] = { 0 }, now = (unsigned)time_now_ms();
+    if (pc.stat_at && now - pc.stat_at < POLL_MS) return;
+    pc.stat_at = now | 1;
     if (__xstat(3, STARRED, s)) {
         free(pc.starred);
         pc.starred = 0;
@@ -246,27 +281,32 @@ static int starred(const char *path) {
     return strstr(pc.starred, line) != 0;
 }
 
-/* Now Playing's heart (ratings.c rate_tick and rate_bind): on a starrable track a star (the build's
- * play_star and play_unstar, drawn as the hearts are), back to My Fav's heart once it plays
- * another. */
+/* Now Playing's star (ratings.c rate_tick and rate_bind): the build draws My Fav's heart as a star
+ * (tools/build.py), so it is one image for both. On a starrable track it shows Pocket Casts' star,
+ * and My Fav is put in step with it, once a change: stock's own repaint of the heart (as Now
+ * Playing comes back from Quick Settings) then shows the same star, never My Fav's other state. */
 void podcast_heart(void *fav) {
-    if (!fav) return;
-    const char *path = starrable(), *img;
+    const char *path = fav ? starrable() : 0, *img;
     if (path) {
-        img = starred(path) ? "play_star" : "play_unstar";
+        int on = starred(path);
+        unsigned key = fnv(FNV_SEED, (const unsigned char *)path);
+        if ((key != pc.matched_key || on != pc.matched_on) && rate_fav_match(on))
+            pc.matched_key = key, pc.matched_on = on;
+        img = on ? "play_fav" : "play_unfav";
         pc.painted = 1;
-    } else if (pc.painted) {
+    } else if (fav && pc.painted) { /* another track after a Pocket episode: My Fav's star again */
         unsigned at, n;
         void *r = queue_now(&at, &n);
         img = r && checkFavExist(r) ? "play_fav" : "play_unfav";
-        pc.painted = 0;
+        pc.painted = 0, pc.matched_key = 0;
     } else
         return;
     if (tk_strcmp(widget_get_prop_str(fav, "image", ""), img)) image_base_set_image(fav, img);
 }
 
-/* The heart's tap (ratings.c rate_fav_click): stars or unstars a starrable track in Pocket Casts,
- * through q2-pocket, instead of My Fav. Returns 0 for any other track. */
+/* The star's tap (ratings.c rate_fav_click): stars or unstars a starrable track in Pocket Casts,
+ * through q2-pocket, instead of My Fav, which follows it (podcast_heart). Returns 0 for any other
+ * track. */
 int podcast_star(void *fav) {
     const char *path = starrable();
     if (!path) return 0;
@@ -284,6 +324,121 @@ int podcast_star(void *fav) {
     podcast_heart(fav);
     toast(on ? "Starred in Pocket Casts" : "Star removed");
     return 1;
+}
+
+/* Library → Starred (navigation.c ringnav_localclass, before My Fav loads): the downloaded episodes
+ * Pocket Casts has starred join My Fav (batch-select's Add, which skips those in it already), so
+ * the list holds every star, Pocket's and the Q2's own. Only added: a star taken away on another
+ * device leaves My Fav when its episode next plays (podcast_heart). */
+void podcast_starred_sync(void) {
+    pc.stat_at = 0; /* the list as it is now */
+    starred_load();
+    if (!pc.starred || !pc.starred[1]) return;
+    int k;
+    void *songs = staged(songs_unsorted, 0, &k), *add = songs ? _create_deque("stSongInfo") : 0;
+    if (!add) {
+        if (songs) deque_destroy(songs);
+        return;
+    }
+    deque_init(add);
+    char line[520];
+    for (unsigned i = 0, n = deque_size(songs); i < n; ++i) {
+        void *r = deque_at(songs, i);
+        const char *path = P(r, REC_PATH);
+        if (!path || !tk_str_start_with(path, "/mnt/mmc/Podcasts/") || strlen(path) > 512) continue;
+        tk_snprintf(line, sizeof line, "\n%s\n", path);
+        if (strstr(pc.starred, line)) _deque_push_back(add, r);
+    }
+    unsigned n = deque_size(add);
+    if (n) {
+        batch_init_selectrecord((int)n);
+        for (unsigned i = 0; i < n; i++) batch_set_selectitem((int)i);
+        batch_add_file(0xf001, 0xf00a, add, P(p_vector_select_record, 0), 0);
+        ratings_copy_due();
+    }
+    deque_destroy(add);
+    deque_destroy(songs);
+}
+
+/* name, a file's name, as a title in out: without its extension, a leading date ("2024-10-07 - ",
+ * "_" or " " after it: Pocket's and Podcasts' names) and a trailing " [id]" (Pocket's, for a name
+ * two episodes share); underscores as spaces in a name without any. */
+static void name_title(const char *name, char *out, unsigned size) {
+    const char *dot = strrchr(name, '.');
+    int n = dot && dot != name ? (int)(dot - name) : (int)strlen(name), i = 0;
+    while (i < 10 && i < n && ((name[i] >= '0' && name[i] <= '9') || name[i] == '-')) ++i;
+    if (i == 10 && name[4] == '-' && name[7] == '-' && n > 13) {
+        name += 10, n -= 10;
+        if (n > 3 && !strncmp(name, " - ", 3))
+            name += 3, n -= 3;
+        else if (*name == '_' || *name == ' ')
+            ++name, --n;
+    }
+    if (n > 3 && name[n - 1] == ']') {
+        int k = n - 2;
+        while (k > 0 && name[k] != '[') --k;
+        if (k > 1 && name[k - 1] == ' ') n = k - 1;
+    }
+    if ((unsigned)n >= size) n = (int)size - 1;
+    memcpy(out, name, (unsigned)n);
+    out[n] = 0;
+    int spaced = 0;
+    for (char *p = out; *p; ++p) spaced |= *p == ' ';
+    for (char *p = out; *p && !spaced; ++p)
+        if (*p == '_') *p = ' ';
+}
+
+/* A record's text field set to s, a copy. The old one is left, not freed: another thread can be
+ * reading the record (a few bytes a track played from Folder). Only on the Q2: test/fw's 64-bit
+ * build lays stock's records out in their 4-byte slots, which a pointer there would overrun. */
+static char *rec_set(void *r, int field, const char *s) {
+#if __SIZEOF_POINTER__ == 4
+    char *copy = strdup(s);
+    if (copy) *(char **)((char *)r + field) = copy;
+    return copy;
+#else
+    (void)r, (void)field, (void)s;
+    return 0;
+#endif
+}
+
+/* A local track without a title of its own (a song played from Folder, as every Pocket episode is):
+ * the title the player reads from its file; until then, and for a file without one, a spoken
+ * track's name as a title (name_title). Without an artist, a spoken one's is its show (the album
+ * its file names), another's its file's. Now Playing, the lock screen and View Queue then name the
+ * episode, not its file. Every UI pass: it is cheap, and the player reads a file's tags just as it
+ * starts. */
+static void title_fill(void) {
+    unsigned at, n;
+    void *r = queue_now(&at, &n);
+    if (!r || I(r, REC_TYPE) != 8 || !P(r, REC_PATH)) return;
+    const char *own = P(r, REC_TITLE), *artist = P(r, REC_ARTIST);
+    int named = pc.named && own == pc.named, voice = spoken(P(r, REC_PATH)), changed = 0;
+    if (!own || !*own || named) {
+        const char *tag = now_tag(r, REC_TITLE);
+        char buf[256];
+        if (tag != own && tag && *tag) { /* the player has read the file */
+            changed = rec_set(r, REC_TITLE, tag) != 0;
+            pc.named = 0;
+        } else if (!named && voice && P(r, REC_NAME)) {
+            name_title(P(r, REC_NAME), buf, sizeof buf);
+            changed = *buf && (pc.named = rec_set(r, REC_TITLE, buf)) != 0;
+        }
+    }
+    if (!artist || !*artist) {
+        const char *album = now_tag(r, REC_ALBUM), *tag = now_tag(r, REC_ARTIST),
+                   *show = voice && album != P(r, REC_ALBUM) && album && *album ? album
+                           : tag != artist && tag && *tag                       ? tag
+                                                                                : 0;
+        if (show && rec_set(r, REC_ARTIST, show)) changed = 1;
+    }
+    if (!changed || !pc.win) return;
+    void *t = widget_lookup(pc.win, "scrlabel_title", 1),
+         *a = widget_lookup(pc.win, "scrlabel_artist", 1);
+    const char *title = P(r, REC_TITLE);
+    artist = P(r, REC_ARTIST);
+    if (t && title && *title) widget_set_text_utf8(t, title);
+    if (a && artist && *artist) widget_set_text_utf8(a, artist);
 }
 
 /* A spoken track's description, beside it: <folder>/.description/<name>.txt (q2-pocket writes
@@ -315,66 +470,79 @@ static void desc_load(void *r) {
 }
 
 static int pages_gone(void *win, void *event) {
-    if (win == pc.win) pc.win = pc.slide = pc.desc_view = pc.desc_text = pc.ch_view = 0;
+    if (win == pc.win)
+        pc.win = pc.slide = pc.dots = pc.desc_view = pc.desc_text = pc.ch_page = pc.ch_view =
+            pc.lyric = pc.shelf = 0;
     return 0;
 }
 
-/* A page of the slide_view, where the lyrics are, with a scroll view taking up-and-down drags. */
-static void *page(void *slide, int top, int w) {
-    void *p = widget_factory_create_widget(widget_factory(), "view", slide, 0, top, w, PAGE_H);
-    void *view = p ? scroll_view_create(p, 0, 0, w, PAGE_H) : 0;
-    if (!view) {
-        if (p) widget_destroy(p);
-        return 0;
-    }
-    widget_set_prop_int(view, "yslidable", 1);
-    widget_set_prop_int(view, "xslidable", 0);
-    return view;
+/* The dots: a page each, the transcript's too while it is in. */
+static void dots_count(void) {
+    if (pc.dots && pc.slide)
+        widget_set_prop_int(pc.dots, "max", (int)widget_count_children(pc.slide));
 }
 
-/* ringnav_playing, before the visualizer, which stays last: Description and Chapters follow the
- * art, lyrics and info pages, so their places (1 the lyrics, 2 the info) stay. Either page that
- * can't be made leaves both out. */
+/* ringnav_playing: the pages tools/ipod.py made (the art, Description, Chapters and the info; the
+ * lyrics in view_pc_shelf, hidden, until a track has some: transcript_poll), and the buttons beside
+ * the art. A page missing leaves its part out. */
 void podcast_attach(void *win) {
-    void *slide = widget_lookup(win, "slide_view", 1),
-         *lrc = slide ? widget_lookup(slide, "view_lrc", 1) : 0;
-    if (!slide) return;
-    int top = lrc ? I(lrc, W_Y) : 0,
-        w = I(slide, W_W) > 0 && I(slide, W_W) <= 375 ? I(slide, W_W) : 375;
-    int at = (int)widget_count_children(slide);
-    void *desc = page(slide, top, w),
-         *text = desc ? label_create(desc, PAGE_X, 0, w - 2 * PAGE_X, PAGE_H) : 0,
-         *ch = text ? page(slide, top, w) : 0;
-    if (!ch) {
-        if (desc) widget_destroy(P(desc, W_PARENT));
-        return;
-    }
-    widget_use_style(text, "s_label_white20c");
-    widget_set_prop_int(text, "style:normal:font_size", 16);
-    widget_set_prop_int(text, "line_wrap", 1);
-    widget_set_prop_int(text, "word_wrap", 1);
+    pc.slide = widget_lookup(win, "slide_view", 1);
+    if (!pc.slide) return;
     pc.win = win;
-    pc.slide = slide;
-    pc.desc_at = at;
-    pc.desc_view = desc;
-    pc.desc_text = text;
-    pc.ch_view = ch;
+    pc.dots = widget_lookup(win, "slide_indicator1", 1);
+    pc.desc_view = widget_lookup(win, "view_pc_desc_scroll", 1);
+    pc.desc_text = widget_lookup(win, "label_pc_desc", 1);
+    pc.ch_page = widget_lookup(win, "view_pc_chapters", 1);
+    pc.ch_view = widget_lookup(win, "view_pc_chapters_scroll", 1);
+    pc.lyric = widget_lookup(win, "view_lyric", 1);
+    pc.shelf = widget_lookup(win, "view_pc_shelf", 1);
+    if (pc.lyric && P(pc.lyric, W_PARENT) != pc.shelf) pc.lyric = 0; /* not this build's page */
+    pc.lyric_at = (unsigned)time_now_ms();
     pc.shown_desc = pc.shown_rows = ~0u;
+    for (int b = 0; b < B_N; ++b) {
+        void *w = widget_lookup(win, button_names[b], 1);
+        if (w) widget_on(w, EVT_CLICK, button_tap, (void *)(long)b);
+    }
+    dots_count();
     widget_on(win, EVT_DESTROY, pages_gone, win);
     pc.polled = 0; /* podcast_poll fills them on its next pass */
 }
 
+/* The lyrics page, an episode's transcript (q2-pocket's .lrc beside it, which the player reads as
+ * lyrics), in the slide_view last while the player has lyrics, else back in its hidden view; the
+ * page in front when it goes, the one before it. */
+static void transcript_poll(unsigned now) {
+    void *page = pc.lyric;
+    if (!page || !pc.shelf) return;
+    int in = P(page, W_PARENT) == pc.slide, want = mclGetLyricSize() > 0;
+    if (want == in) pc.lyric_at = now;
+    if (want == in || (in && now - pc.lyric_at < TRANSCRIPT_GONE_MS)) return;
+    if (in) {
+        int last = (int)widget_count_children(pc.slide) - 1;
+        if (widget_get_prop_int(pc.slide, "value", 0) >= last)
+            widget_set_prop_int(pc.slide, "value", last - 1);
+        widget_remove_child(pc.slide, page);
+        widget_add_child(pc.shelf, page);
+    } else {
+        widget_remove_child(pc.shelf, page);
+        widget_add_child(pc.slide, page);
+    }
+    pc.lyric_at = now;
+    dots_count();
+    widget_invalidate_force(P(pc.slide, W_PARENT), 0);
+}
+
 static void desc_show(void) {
-    void *t = pc.desc_text;
-    int w = I(pc.desc_view, W_W) - 2 * PAGE_X;
+    void *t = pc.desc_text, *view = pc.desc_view;
+    int w = I(view, W_W) - 2 * PAGE_X, h = I(view, W_H);
     widget_set_text_utf8(t, pc.desc ? pc.desc : "No description");
     widget_set_prop_str(t, "style:normal:text_align_h", pc.desc ? "left" : "center");
     widget_set_prop_str(t, "style:normal:text_align_v", pc.desc ? "top" : "middle");
     widget_set_prop_int(t, "style:normal:text_color", (int)(pc.desc ? 0xffffffffu : GREY));
-    widget_move_resize(t, PAGE_X, 0, w, PAGE_H);
-    if (pc.desc) label_resize_to_content(t, (unsigned)w, (unsigned)w, PAGE_H, 0x7fff);
-    widget_set_prop_int(pc.desc_view, "virtual_h", I(t, W_H) + (pc.desc ? PAGE_X : 0));
-    scroll_view_set_offset(pc.desc_view, 0, 0);
+    widget_move_resize(t, PAGE_X, 0, w, h);
+    if (pc.desc) label_resize_to_content(t, (unsigned)w, (unsigned)w, (unsigned)h, 0x7fff);
+    widget_set_prop_int(view, "virtual_h", I(t, W_H) + (pc.desc ? PAGE_X : 0));
+    scroll_view_set_offset(view, 0, 0);
 }
 
 static int chapter_tap(void *ctx, void *event) {
@@ -386,15 +554,14 @@ static int chapter_tap(void *ctx, void *event) {
 
 static void rows_show(void) {
     void *view = pc.ch_view;
-    int w = I(view, W_W), n = pc.count < ROWS_MAX ? pc.count : ROWS_MAX;
+    int w = I(view, W_W), h = I(view, W_H), n = pc.count < ROWS_MAX ? pc.count : ROWS_MAX;
     widget_destroy_children(view);
     pc.lit = -1;
     pc.shown_count = n;
     if (!n) {
-        void *none =
-            label(view, PAGE_X, 0, w - 2 * PAGE_X, PAGE_H, "s_scrlabel_white20c", 16, GREY);
+        void *none = label(view, PAGE_X, 0, w - 2 * PAGE_X, h, "s_scrlabel_white20c", 16, GREY);
         widget_set_text_utf8(none, pc.state == CH_DONE ? "No chapters" : "Reading chapters…");
-        widget_set_prop_int(view, "virtual_h", PAGE_H);
+        widget_set_prop_int(view, "virtual_h", h);
         return;
     }
     for (int i = 0; i < n; ++i) {
@@ -433,29 +600,31 @@ static void rows_light(void) {
         }
     }
     pc.lit = i;
-    if (i >= 0 && widget_get_prop_int(pc.slide, "value", 0) != pc.desc_at + 1) {
-        int max = pc.shown_count * ROW_H - PAGE_H, y = i * ROW_H;
+    if (i >= 0 && np_front() != pc.ch_page) {
+        int max = pc.shown_count * ROW_H - I(pc.ch_view, W_H), y = i * ROW_H;
         scroll_view_set_offset(pc.ch_view, 0, y < max ? y : max > 0 ? max : 0);
     }
 }
 
-static void pages_poll(void *r) {
+static void pages_poll(void *r, unsigned now) {
     if (!pc.win) return;
-    if (pc.shown_desc != pc.track) {
+    if (pc.desc_view && pc.desc_text && pc.shown_desc != pc.track) {
         pc.shown_desc = pc.track;
         desc_load(r);
         desc_show();
     }
     unsigned rows = pc.track ^ (unsigned)pc.state;
-    if (pc.shown_rows != rows) {
+    if (pc.ch_view && pc.ch_page && pc.shown_rows != rows) {
         pc.shown_rows = rows;
         rows_show();
     }
-    if (g_backlight_status) rows_light();
+    if (pc.ch_view && pc.ch_page && g_backlight_status) rows_light();
+    transcript_poll(now);
 }
 
-/* Every UI pass (ringnav_sleep): the chapters' reader, then every POLL_MS the track: another one's
- * description and, once a spoken one has played CHAPTER_DELAY_MS, its chapters; and the pages. */
+/* Every UI pass (ringnav_sleep): the chapters' reader, the playing track's title and the star, then
+ * every POLL_MS the track: another one's description and, once a spoken one has played
+ * CHAPTER_DELAY_MS, its chapters; and the pages. */
 void podcast_poll(void) {
     if (pc.reading && chapters_poll(pc.reading, time_now_ms())) {
         chapters *c = pc.reading;
@@ -477,6 +646,7 @@ void podcast_poll(void) {
         }
         free(c);
     }
+    title_fill();
     unsigned now = (unsigned)time_now_ms(), at, n;
     if (now - pc.polled < POLL_MS && pc.polled) return;
     pc.polled = now;
@@ -486,5 +656,5 @@ void podcast_poll(void) {
     if (r && pc.state == CH_NONE && !pc.reading &&
         ((pc.win && now - pc.since >= CHAPTER_DELAY_MS) || pc.want))
         read_start(r);
-    pages_poll(r);
+    pages_poll(r, now);
 }

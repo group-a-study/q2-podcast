@@ -1246,6 +1246,8 @@ FUNCTIONS = {
  'toolsRandnum': ('int', 'int'),
  'widget_restack': ('int', 'void *, unsigned'),
  'widget_index_of': ('int', 'void *'),  # Centred Now Playing's column back in its place (navigation.c np_full)
+ 'widget_add_child': ('int', 'void *, void *'),  # Q2 Podcast's transcript page in and out (podcast.c)
+ 'widget_remove_child': ('int', 'void *, void *'),
  'toolsThumbSpecCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetAlbumCover': ('int', 'const char *, const char *, int, int'),
  'toolsGetExternCover': ('int', 'const char *, const char *, int, int'),
@@ -1666,7 +1668,7 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # a prefix-trimmed typo cannot silently disable a screen this way.
     from ipod import (AUDIT, ARTIST_ALBUMS, SETTINGS_ICONS, inc, UI_ASSETS, patch_asset,
                       QUIET_ICONS, quiet_icon, imagemagick, patch_code, patch_style, patch_word, branch, settings_icon,
-                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock,
+                      STATUS_ICONS, status_icon, row_icon, ART_PLACEHOLDERS, sized_art, PLAYING_STOCK, PLAYING_PAGE, playing_stock, PC_ICONS,
                       set_assets, red_glyph)
     contexts = re.findall(r'"([^"]+)"', (ROOT/'patch/contexts.inc').read_text())
     check(contexts, 'No navigation contexts audited')
@@ -1985,12 +1987,12 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     xx = 'release/assets/default/raw/images/xx/'
     icons = {n: ('menu_musicdown.png' if n.endswith('down.png') else 'menu_music.png',
                  (ROOT/'assets/icons'/n).read_bytes()) for n in ICONS}
-    drawn = ('podcasts', 'audiobooks', 'books', 'videos')
+    drawn = ('podcasts', 'audiobooks', 'books', 'videos', 'starred')  # starred: Q2 Podcast's Library row
     icons.update({f'local_{n}.png': (like, (ROOT/'assets/icons'/f'local_{n}.png').read_bytes() if n in drawn
                                      else cat(xx+like)) for n, like in dict(
         shuffle='playset_playmode.png', scrobble='wifiset_wifi.png', podcasts='netservice_dlna.png',
         audiobooks='playset_foldercover.png', photos='playset_covermode.png', books='system_language.png',
-        videos='system_display.png', longsongs='system_time.png', era='local_genre.png').items()})
+        videos='system_display.png', longsongs='system_time.png', era='local_genre.png', starred='local_fav.png').items()})
     icons['local_games.png'] = ('system_language.png', (ROOT/'assets/icons/local_games.png').read_bytes())
     # Minimal's selected Wi-Fi and Bluetooth rows draw this grey copy over stock's white delete mark
     icons['list_delete.png'] = ('navbar_delete.png', cat(xx+'navbar_delete.png'))
@@ -2011,8 +2013,8 @@ def build(zip_path, out, logo, dev=False, repo=REPO, aic_idle_wait=False, rotato
     # Now Playing's AirPlay button while a speaker plays (airplay.c): stock's glyph in the heart's
     # red, which the accent maps as it does the heart's
     icons['airplay_on.png'] = ('airplay.png', red_glyph(cat(xx+'airplay.png')))
-    # Now Playing's heart as a Pocket episode's star (podcast.c): the hearts' 28 px, their ink and baseline
-    for n in ('play_star.png', 'play_unstar.png'):
+    # Q2 Podcast's Now Playing buttons beside the art (tools/ipod.py PC_SIDE, podcast.c): 28 px glyphs as the star's
+    for n in PC_ICONS:
         icons[n] = ('play_order.png', (ROOT/'assets/icons'/n).read_bytes())
     pages = {ui+PLAYING_STOCK: (ui+'playing_page.bin', english_ui(PLAYING_PAGE, playing_stock(cat(ui+'playing_page.bin')))), **set_pages}
     added = []

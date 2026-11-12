@@ -104,12 +104,13 @@ _Static_assert(__builtin_offsetof(scheme_t, mode) == SCHEME_MODE_OFF, "test/patc
 int geom_val(int v) { return geom_vals[st.geom][v]; }
 int client_h(void) { return 320 - geom_val(V_BAR); }
 /* The Display rows' settings, by ringnav_display's index: 0 Accent, 1 Home (0 Split, 1 Full,
- * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Centred
- * Now Playing, 9 Click With Headphones (Controls, under Key Tone), 10 Single Press Scrub, 11 Time
- * in Title; 12 on: a theme's own options, SETTING_OWN + k for theme_keys[k]. */
-static const char *const setting_keys[] = { "ACCENT",    "HOME",      "BATTERY",     "THEME",
-                                            "SHORTCUT",  "ROUNDED",   "LIGHT",       "KEEPLIT",
-                                            "NPCENTRED", "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
+ * 2 Carousel), 2 Battery, 3 Theme, 4 Shortcut, 5 Corners, 6 Light Mode, 7 Smart Awake, 8 Floating
+ * Cover (Q2 Podcast's, where Centred Now Playing was), 9 Click With Headphones (Controls, under Key
+ * Tone), 10 Single Press Scrub, 11 Time in Title; 12 on: a theme's own options, SETTING_OWN + k for
+ * theme_keys[k]. */
+static const char *const setting_keys[] = { "ACCENT",   "HOME",      "BATTERY",     "THEME",
+                                            "SHORTCUT", "ROUNDED",   "LIGHT",       "KEEPLIT",
+                                            "HOMEPAN",  "KEYTONEHP", "SCRUBSINGLE", "TIMETITLE" };
 const int setting_counts[] = { SETTING_N_ACCENT,
                                SETTING_N_HOME,
                                SETTING_N_BATTERY,
@@ -118,13 +119,13 @@ const int setting_counts[] = { SETTING_N_ACCENT,
                                SETTING_N_CORNERS,
                                SETTING_N_LIGHT,
                                2,
-                               SETTING_N_NP_LAYOUT,
+                               SETTING_N_HOME_PAN,
                                2,
                                2,
                                2 };
-int *const setting_values[] = { &st.accent,     &st.home,       &st.battery,      &st.theme,
-                                &st.shortcut,   &st.rounded,    &st.light,        &st.keep_lit,
-                                &st.np_centred, &st.keytone_hp, &st.scrub_single, &st.time_title };
+int *const setting_values[] = { &st.accent,   &st.home,       &st.battery,      &st.theme,
+                                &st.shortcut, &st.rounded,    &st.light,        &st.keep_lit,
+                                &st.home_pan, &st.keytone_hp, &st.scrub_single, &st.time_title };
 /* An option's value and config key: the accent's are the theme's own, an own option's st.own[] and
  * theme_keys[], the rest setting_values'. */
 int *option_slot(const theme_t *T, int setting) {
@@ -182,7 +183,7 @@ __attribute__((noinline)) static void settings_read(void) {
     st.rounded = config_value("IPOD", "ROUNDED", 2, 0); /* Square unless chosen */
     st.light = config_value("IPOD", "LIGHT", 3, 0);     /* dark unless chosen; 2 Auto */
     st.keep_lit = config_value("IPOD", "KEEPLIT", 2, 0);
-    st.np_centred = config_value("IPOD", "NPCENTRED", 2, 0);
+    st.home_pan = config_value("IPOD", "HOMEPAN", 2, 0); /* still unless chosen */
     st.keytone_hp = config_value("IPOD", "KEYTONEHP", 2, 0);
     st.scrub_single = config_value("IPOD", "SCRUBSINGLE", 2, 0);
     st.time_title = config_value("IPOD", "TIMETITLE", 2, 1); /* the clock unless chosen */
@@ -243,10 +244,13 @@ static int theme_own(int k) { return option_of(theme(), SETTING_OWN + k) ? st.ow
 /* Classic's Home in Split (coverflow.c): Library on Home and Row Preview */
 int home_lib_on(void) { return theme_own(OWN_HOMELIB); }
 int row_preview_on(void) { return theme_own(OWN_ROWPREVIEW); }
+/* Floating Cover (coverflow.c HOME_PAN): Split's art pans */
+int home_pan_on(void) { return setting(SETTING_HOMEPAN); }
 const char *const np_pages[] = { "playing_page", "playing_page_stock" }; /* [NP_*] */
 _Static_assert(sizeof np_pages / sizeof *np_pages == NP_N, "one page per NP_* layout");
-/* The Now Playing page: the theme's layout, which Centred Now Playing forces to NP_CENTRED. */
-int np_layout(void) { return setting(SETTING_NPCENTRED) ? NP_CENTRED : theme()->np_layout; }
+/* The Now Playing page: Q2 Podcast's is the centred one under every theme (tools/ipod.py
+ * playing_stock). */
+int np_layout(void) { return NP_CENTRED; }
 /* Shortcut with no key is Rockbox while the card has it, else Favorites: asked each time, as the
  * card may mount after the first read. */
 int shortcut(void) {
@@ -286,61 +290,26 @@ int ipod_battery(void) {
     accent();
     return st.battery;
 } /* lockscreen.c's Large clock */
-/* 1 when Home shows its Shortcut row (coverflow_home_layout): any target but Rockbox and Groovebox,
- * and those while the card has them. */
+/* 1 when Home shows its Shortcut row (coverflow_home_layout): Q2 Podcast's is Pocket, always. */
 int ipod_home_rockbox(void) {
     st.home_rockbox = rockbox_available();
     st.home_groovebox = groovebox_available();
-    int s = shortcut();
-    return s == SHORTCUT_GROOVEBOX ? st.home_groovebox : s || st.home_rockbox;
+    return 1;
 }
-const char *ipod_home_shortcut(void) {
-    static const char *const names[] = { "Rockbox",
-                                         "Artists",
-                                         "Albums",
-                                         "Favorites",
-                                         "Rated Albums",
-                                         "Shuffle",
-                                         "Games",
-                                         "Playlists",
-                                         "Podcasts",
-                                         "Audiobooks",
-                                         [SHORTCUT_GROOVEBOX] = "Groovebox" };
-    _Static_assert(sizeof names / sizeof *names == SETTING_N_SHORTCUT, "one per shortcut");
-    return names[shortcut()];
-}
+/* Home's Shortcut row: Q2 Podcast's is Pocket, the Pocket Casts app (q2-pocket), whatever Shortcut
+ * held; Appearance has no Shortcut row. */
+#define POCKET_ID "pocket"
+const char *ipod_home_shortcut(void) { return "Pocket"; }
 /* Podcasts, Audiobooks and Videos (docs/internals.md#podcasts-and-audiobooks): the card's top-level
  * folders of these names, case aside, browsed in folder_page from there; Photos opens photos.c,
  * Books books.c. */
 const char *const MEDIA[] = { "Podcasts", "Audiobooks", "Photos", "Books", "Videos" };
-extern int rockbox_open(void *, void *);
-int rated_albums(void *, void *);
+/* The Shortcut row's press: Pocket's page, as its Streaming row opens it; without the app, where to
+ * get it. */
 int home_shortcut_open(void *ctx, void *event) {
-    int s = shortcut();
-    if (!s) return rockbox_open(ctx, event);
-    if (s == SHORTCUT_GROOVEBOX) {            /* the card game by id, as its Games row starts it */
-        if (addon_game_open("groovebox") < 0) /* no card game has the id: the folder, or a slot */
-            toast(groovebox_available() ? "Groovebox can't start from the card"
-                                        : "Groovebox is not on the card");
-        return 0;
-    }
-    if (s == 4) return rated_albums(ctx, event);
-    if (s == 5) return shuffle_menu(ctx, event);
-    if (s == 6) return games_open(ctx, event);
-    if (s == 8 || s == 9) return media_click((void *)(long)(s == 8 ? PODCASTS : AUDIOBOOKS), event);
-    if (s == 7)
-        return navigator_to_with_context("localmusic/playlist_page",
-                                         (void *)0); /* as stock's Home */
-    if (s == 2) {
-        struct {
-            int cls;
-            void *record;
-        } album = { 0xf003, 0 };
-        return navigator_to_with_context("localmusic/album_page", &album);
-    }
-    return navigator_to_with_context(s == 1 ? "localmusic/localclass_page"
-                                            : "localmusic/allmusic_page",
-                                     (void *)(long)(s == 1 ? 0xf004 : 0xf00a));
+    (void)ctx, (void)event;
+    if (!addon_open_id(POCKET_ID)) toast("Install Pocket from System settings → App Store");
+    return 0;
 }
 /* Light Mode keeps a coloured accent's tones; a neutral one (Graphite, Ivory) takes its silver red
  * tone for both, which flips dark. Before flip. */

@@ -1816,7 +1816,8 @@ def test_row_preview_is_classics_own_choice(fw, keys, on):
     assert fw.fn('row_preview_on', C.c_int)() == on
 
 
-@pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 0), (2, 0, 1)])
+# Q2 Podcast: the Shortcut row is Pocket, always shown.
+@pytest.mark.parametrize('shortcut, card, row', [(None, 1, 1), (None, 0, 1), (0, 1, 1), (0, 0, 1), (2, 0, 1)])
 def test_home_shows_its_shortcut_row_unless_it_is_a_missing_rockbox(fw, shortcut, card, row):
     theme(fw, 0, **({} if shortcut is None else {'SHORTCUT': shortcut}))
     def stat(version, path, info, *_):
@@ -1826,6 +1827,7 @@ def test_home_shows_its_shortcut_row_unless_it_is_a_missing_rockbox(fw, shortcut
     assert bool(fw.fn('ipod_home_rockbox', C.c_int)()) == bool(row)
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Home's Shortcut row is Pocket (test_addon.py's Pocket row tests)")
 @pytest.mark.parametrize('shortcut, page, context', [
     (1, b'localmusic/localclass_page', 0xf004), (3, b'localmusic/allmusic_page', 0xf00a),
     (7, b'localmusic/playlist_page', 0),
@@ -1837,6 +1839,7 @@ def test_the_home_shortcut_opens_its_list(fw, shortcut, page, context):
     assert C.string_at(name) == page and ctx == context
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Home's Shortcut row is Pocket (test_addon.py's Pocket row tests)")
 def test_the_albums_shortcut_opens_all_albums(fw):
     theme(fw, 0, SHORTCUT=2)
     seen = []
@@ -2155,10 +2158,10 @@ def test_a_window_takes_its_themes_motion_as_it_loads(fw, ui, index):
     assert playing.props.get(b'close_anim_hint') == hint('PLAYING') and b'anim_hint' not in playing.props  # it opens at once
 
 
-@pytest.mark.parametrize('keys, layout', [({}, 0), ({'NPCENTRED': 1}, 1)])
-def test_centred_now_playing_forces_the_centred_layout(fw, keys, layout):
-    theme(fw, 0, **keys)
-    assert fw.fn('np_layout', C.c_int)() == layout  # NP_IPOD, NP_CENTRED
+@pytest.mark.parametrize('t', [0, 1, 2])
+def test_q2_podcast_s_now_playing_is_the_centred_layout_under_every_theme(fw, t):
+    theme(fw, t)
+    assert fw.fn('np_layout', C.c_int)() == 1  # NP_CENTRED
 
 
 def test_a_set_with_a_list_end_keeps_the_selected_row_above_it(fw, ui, st):

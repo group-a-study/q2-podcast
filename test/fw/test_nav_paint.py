@@ -2876,8 +2876,9 @@ def test_a_loaded_window_is_stock_s_root(fw, world, st):
     assert ui_load(fw, st, b'albums_page', 0)[0] == 0
 
 
-@pytest.mark.parametrize('centred, page', [('0', 'playing_page'), ('1', 'playing_page_stock')])
+@pytest.mark.parametrize('centred, page', [('0', 'playing_page_stock'), ('1', 'playing_page_stock')])
 def test_now_playing_loads_the_layout_centred_now_playing_picks(fw, world, st, centred, page):
+    """Q2 Podcast: the centred page whatever the old Centred Now Playing key holds."""
     theme(fw, MINIMAL, NPCENTRED=centred)
     win = world.window('playing_page')
     _, asked = ui_load(fw, st, b'playing_page', win)

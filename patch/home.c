@@ -54,54 +54,74 @@ static void library_look(void *view) {
     }
 }
 
-/* 1 when the Library leads with Search, in a set without Library icons (Classic): the pull-down's
- * own stock search (0x5241c4, which ignores its arguments) shown, as Home's Split list hides the
- * pull. Home's pane counts Shuffle's row from it (coverflow.c coverflow_home_row). */
-int library_search(void) { return !geom_val(V_LIB_ART); }
+/* A stock row as Q2 Podcast's: its label's text, and its icon's image when icon is given. */
+static void stock_row_as(void *row, const char *icon, const char *text) {
+    void *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+    int named = 0;
+    for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {
+        void *c = widget_get_child(button, j);
+        const char *type = widget_get_type(c);
+        if (!named && (!tk_strcmp(type, "hscroll_label") || !tk_strcmp(type, "label"))) {
+            widget_set_text_utf8(c, text);
+            named = 1;
+        } else if (icon && !j && !tk_strcmp(type, "image"))
+            image_base_set_image(c, icon);
+    }
+}
 
-/* The Library: Search (library_search), one Shuffle row opening its menu, browsing, the user's own
- * lists, listening history, the card's other media, then upkeep. The added rows' buttons have no
- * name, so stock's row click (atoi of the name, 0x5241fc) never sees them. */
+/* Stock's Library row i, by its button's name (stock names each by its index, which its click
+ * reads), so rows already in Q2 Podcast's order are found again; else the view's i-th row. */
+static void *stock_row(void *view, unsigned i) {
+    char name[12];
+    tk_snprintf(name, sizeof name, "%u", i);
+    for (unsigned k = 0, n = widget_count_children(view); k < n; ++k) {
+        void *row = widget_get_child(view, k);
+        void *button = widget_count_children(row) ? widget_get_child(row, 0) : (void *)0;
+        if (button && !tk_strcmp(widget_get_prop_str(button, "name", ""), name)) return row;
+    }
+    return widget_get_child(view, i);
+}
+
+/* row to place n in view, unless it is there already (the page opened again over the same rows). */
+static void place(void *view, void *row, unsigned n) {
+    if (widget_get_child(view, n) != row) widget_restack(row, n);
+}
+
+/* The Library, Q2 Podcast's: Podcasts (the card's folder of shows), Episodes (stock's Recently
+ * Added, the podcasts' alone: navigation.c ringnav_localclass), Starred (My Fav, Pocket Casts'
+ * stars in it, spoken tracks alone), Playlists, Recently Played (stock's Recent, spoken tracks
+ * alone), Audiobooks, then Update Local Music. Stock's music rows stay, hidden, after them. The
+ * added rows' buttons have no name, so stock's row click (atoi of the name, 0x5241fc) never sees
+ * them. */
 int ringnav_localmusic(void *win, void *ctx) {
     int result = stock_localmusic_trampoline(win, ctx);
     void *view = win ? widget_lookup(win, "scroll_view_localmusic", 1) : (void *)0;
     if (!view || widget_count_children(view) != L_STOCK) return result;
     void *stock[L_STOCK];
-    for (int i = 0; i < L_STOCK; i++) stock[i] = widget_get_child(view, i);
+    for (int i = 0; i < L_STOCK; i++) stock[i] = stock_row(view, (unsigned)i);
     unsigned n = 0; /* each row moves to n as it comes, so Update Local Music, left, ends last */
-    if (library_search())
-        widget_restack(library_row(view, (void *)0, stock_search, 0, "Search", 1), n++);
-    widget_restack(library_row(view, "local_shuffle", shuffle_menu, 0, "Shuffle", 1), n++);
-    static const unsigned char middle[] = { L_ARTISTS,   L_ALBUMS, L_SONGS, L_GENRES,
-                                            L_PLAYLISTS, L_FAV,    L_ADDED, L_RECENT };
-    for (unsigned i = 0; i < sizeof middle; i++)
-        if (middle[i] == L_GENRES) { /* browsing by a tag, as Genre */
-            widget_restack(stock[L_GENRES], n++);
-            widget_restack(library_row(view, "local_era", era_menu, 0, "Era", 1), n++);
-        } else if (middle[i] == L_FAV) { /* My Fav is Ratings' Loved, its row kept hidden */
-            widget_restack(library_row(view, "local_fav", ratings_menu, 0, "Ratings", 1), n++);
-            widget_set_visible(stock[L_FAV], 0, 0);
-            widget_restack(stock[L_FAV], n++);
-        } else
-            widget_restack(stock[middle[i]], n++);
-    widget_restack(library_row(view, "local_frequentplay", most_played, 0, "Most Played", 1), n++);
-    widget_set_visible(stock[L_FREQUENT], 0, 0); /* Most Played is its list, from every listen */
-    widget_restack(stock[L_FREQUENT], n++);
-    widget_restack(stock[L_HIRES], n++);
-    widget_restack(library_row(view, "local_longsongs", long_songs, 0, "Long Songs", 1), n++);
-    /* Podcasts, Audiobooks, Photos, Books and Videos, each only with its folder; then iPod's Games.
-     */
-    static const char *const icons[] = { "local_podcasts", "local_audiobooks", "local_photos",
-                                         "local_books", "local_videos" };
     char path[sizeof st.media_root];
-    for (int k = 0; k < VIDEOS; k++)
-        if (media_find(k + 1, path))
-            widget_restack(
-                library_row(view, icons[k], media_click, (void *)(long)(k + 1), MEDIA[k], 1), n++);
-    widget_restack(library_row(view, "local_games", games_open, 0, "Games", 1), n++);
-    if (scrobble_ready())
-        widget_restack(
-            library_row(view, "local_scrobble", upload_scrobbles, 0, "Upload Scrobbles", 0), n++);
+    if (media_find(PODCASTS, path))
+        widget_restack(library_row(view, "local_podcasts", media_click, (void *)(long)PODCASTS,
+                                   MEDIA[PODCASTS - 1], 1),
+                       n++);
+    stock_row_as(stock[L_ADDED], 0, "Episodes");
+    place(view, stock[L_ADDED], n++);
+    stock_row_as(stock[L_FAV], "local_starred", "Starred");
+    place(view, stock[L_FAV], n++);
+    place(view, stock[L_PLAYLISTS], n++);
+    stock_row_as(stock[L_RECENT], 0, "Recently Played");
+    place(view, stock[L_RECENT], n++);
+    if (media_find(AUDIOBOOKS, path))
+        widget_restack(library_row(view, "local_audiobooks", media_click, (void *)(long)AUDIOBOOKS,
+                                   MEDIA[AUDIOBOOKS - 1], 1),
+                       n++);
+    static const unsigned char music[] = { L_SONGS,  L_ALBUMS,   L_ARTISTS,
+                                           L_GENRES, L_FREQUENT, L_HIRES };
+    for (unsigned i = 0; i < sizeof music; i++) {
+        widget_set_visible(stock[music[i]], 0, 0);
+        place(view, stock[music[i]], n++);
+    }
     library_look(view);
     return result;
 }

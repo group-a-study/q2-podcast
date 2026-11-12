@@ -380,7 +380,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort\n'
+    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort places\n'
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -4295,26 +4295,44 @@ def toasts(fw):
     return out
 
 
-def test_the_groovebox_shortcut_starts_the_card_game_with_the_sound(fw):
+# Q2 Podcast: Home's Shortcut row is Pocket (theme_engine.c), whatever SHORTCUT holds: its press opens the Pocket
+# app's page (the app launched with it), or says where to get the app. Groovebox starts from Games.
+@pytest.mark.parametrize('value', [b'', b'10', b'3'])
+def test_the_pocket_row_opens_the_pocket_app(fw, value):
+    world = card(fw, pocket=b'name=Pocket\n', groovebox=b'name=Groovebox\ngame=1\n')
+    fw.mock('fw_fork', lambda *_: 77)
+    fw.mock('window_create', lambda *_: 0x1000)  # the page's window
+    seen = toasts(fw)
+    assert shortcut(fw, value)(None, None) == 0 and seen == [] and fw.calls('window_create')
+    # the opening noted for the app (Pocket syncs at each): the time, in its own file
+    assert (b'/tmp/q2-addon.open.tmp', b'/tmp/q2-pocket.open') in world.of('rename')
+    assert world.written[b'/tmp/q2-addon.open.tmp'].rstrip(b'\n').isdigit()
+
+
+def test_the_pocket_row_says_where_to_get_the_app(fw):
+    card(fw, other=b'name=Other\n')
+    fw.mock('fw_fork', lambda *_: 77)
+    seen = toasts(fw)
+    assert shortcut(fw, b'')(None, None) == 0
+    assert seen == ['Install Pocket from System settings → App Store'.encode()] and not fw.calls('fw_fork')
+
+
+def test_the_groovebox_game_starts_with_the_sound(fw):
     card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: 77)
     fw.mock('fw_socket', lambda *_: 9)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0 and seen == []
+    assert fw.fn('addon_game_open', C.c_int, C.c_char_p)(b'groovebox') == 1 and seen == []
     gm = fw.var('addon__gm', Game)
     assert (gm.pid, gm.audio, gm.sock, gm.path) == (77, 1, 9, b'/tmp/q2-groovebox.input.sock')
     assert fw.calls('player_stop') and fw.calls('mclSetMute') and fw.calls('device_set_volume')  # the jack readied, dac_take
 
 
-@pytest.mark.parametrize('folder, said', [({}, b'Groovebox is not on the card'),
-                                          ({'groovebox': b'name=Groovebox\n'}, b"Groovebox can't start from the card")])
-def test_the_groovebox_shortcut_says_when_no_card_game_is_it(fw, folder, said):
-    """No .groovebox, or one whose q2app isn't a game's: the binary is there, the row shows, the tap says so."""
+@pytest.mark.parametrize('folder', [{}, {'groovebox': b'name=Groovebox\n'}])
+def test_no_card_game_by_the_id_starts_nothing(fw, folder):
+    """No .groovebox, or one whose q2app isn't a game's: nothing starts by that id."""
     card(fw, other=b'name=Other\ngame=1\n', **folder)
     fw.mock('fw_fork', lambda *_: 77)
-    seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
-    assert seen == [said] and not fw.calls('fw_fork')
     opened = fw.fn('addon_game_open', C.c_int, C.c_char_p)
     assert opened(b'groovebox') == -1 and not fw.calls('fw_fork')
     assert opened(b'other') == 1 and fw.calls('fw_fork') and not fw.calls('player_stop')  # a game without the sound
@@ -4324,7 +4342,7 @@ def test_a_card_game_that_can_t_fork_says_so(fw):
     card(fw, groovebox=b'name=Groovebox\ngame=1\naudio=1\n')
     fw.mock('fw_fork', lambda *_: -1)
     seen = toasts(fw)
-    assert shortcut(fw, b'10')(None, None) == 0
+    fw.fn('addon_game_open', C.c_int, C.c_char_p)(b'groovebox')
     assert seen == [b"It couldn't start"] and fw.var('addon__gm', Game).pid == 0 and fw.calls('player_stop')
 
 

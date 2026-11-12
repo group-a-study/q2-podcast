@@ -99,10 +99,10 @@ static void *rate_track(void) {
     return queue_now(&at, &n);
 }
 
-/* "♥♥♥♡♡" for n hearts, in s (16 bytes). */
+/* "★★★☆☆" for n of 5 (Q2 Podcast's ratings are stars, as its heart is), in s (16 bytes). */
 const char *hearts_text(char *s, int n) {
     char *p = s;
-    for (int i = 0; i < 5; i++) p += tk_snprintf(p, 4, i < n ? "\xe2\x99\xa5" : "\xe2\x99\xa1");
+    for (int i = 0; i < 5; i++) p += tk_snprintf(p, 4, i < n ? "\xe2\x98\x85" : "\xe2\x98\x86");
     return s;
 }
 
@@ -212,8 +212,8 @@ static void rate_paint(void) {
     if (ra.rate_pick)
         tk_snprintf(t, sizeof t,
                     !gloss              ? "%d of 5"
-                    : ra.rate_pick == 1 ? "1 Heart"
-                                        : "%d Hearts",
+                    : ra.rate_pick == 1 ? "1 Star"
+                                        : "%d Stars",
                     ra.rate_pick);
     widget_set_text_utf8(widget_get_child(panel, 0), t);
 }
@@ -333,6 +333,18 @@ static int rate_fav_click(void *ctx, void *event) {
     return 0;
 }
 
+/* My Fav on (1) or off for the playing track, as a tap on its heart puts it: podcast.c keeps a
+ * Pocket episode's in step with its star. 1 once it is so, 0 without Now Playing's heart to do it.
+ */
+int rate_fav_match(int on) {
+    void *r = rate_track();
+    if (!r || !checkFavExist(r) == !on) return 1;
+    if (!ra.rate_ctx) return 0;
+    FAV_CLICK(ra.rate_ctx, (void *)0);
+    ratings_copy_due();
+    return 1;
+}
+
 static int rate_gone(void *win, void *event) {
     if (win != st.rate_win) return 0;
     stop_timer(&ra.rate_hold);
@@ -444,8 +456,7 @@ static int rated_open(void *ctx, void *event) {
                     hearts_text(hs, of[i]), artist && *artist ? artist : "");
         page_row_detail(view, i, track_name(name, sizeof name, t), detail, rt_play);
     }
-    if (!count)
-        page_row_detail(view, 0, "No songs yet", "Hold the heart on Now Playing to rate", 0);
+    if (!count) page_row_detail(view, 0, "No songs yet", "Hold the star on Now Playing to rate", 0);
     free(h);
     free(of);
     return 0;

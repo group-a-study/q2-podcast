@@ -1841,6 +1841,7 @@ def test_without_lyrics_a_tap_stays_in_the_column(fw, ui, mcl, st):
     assert st.np_full == 0 and fw.calls('widget_restack') == []
 
 
+@pytest.mark.skip(reason="Q2 Podcast has no iPod Now Playing page: it is always the centred one (np_layout)")
 @pytest.mark.parametrize('t, centred, switch', [(CLASSIC, 1, 0), (MINIMAL, 0, 0), (MINIMAL, 0, 1)])
 def test_the_ipod_pages_tap_takes_the_lyrics_over_the_whole_window_and_back(fw, ui, mcl, st, t, centred, switch):
     theme(fw, st, t, NPCENTRED=centred)  # Classic leaves the option undeclared: it reads 0

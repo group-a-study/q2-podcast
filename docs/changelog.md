@@ -1,5 +1,19 @@
 # Changelog
 
+- **1.8.0**:
+  - Q2 Podcast now has everything Q2 Pod's latest test builds have: its battery work and fixes up to Q2 Pod 1.7.6 and since (see **1.7.7** and **1.7.6** below), letters in long lists, the still Home art and the rest.
+  - Now Playing: one page under every theme, the cover centred. Down each side of the cover are three buttons: the star, 15 seconds back and the previous chapter on the left; AirPlay, 30 seconds on and the next chapter on the right. Without chapters, the chapter buttons go to the previous or next episode. The repeat button is gone.
+  - Now Playing: a swipe moves everything between the top row and the progress bar, the cover, the title and the buttons, to the next page, as the iPod layout does. The dots are under the progress bar, between the times.
+  - Now Playing's pages: the cover, **Description**, **Chapters**, the file's details, and **Transcript** when the episode has one. The transcript follows the episode as it plays, as lyrics do. The lyrics and visualizer pages are gone.
+  - Now Playing: an episode's title is its own, not its file's name with the date in front, and the line under it is the show.
+  - Now Playing: the heart is a star everywhere, and on a Pocket episode it stays Pocket Casts' star when you come back from Quick Settings, rather than showing the other state for a moment.
+  - Library: Podcasts, Episodes (the newest first), Starred (with Pocket Casts' stars), Playlists, Recently Played and Audiobooks, then Update Local Music. Artists, Albums, Songs, Genres and the other music lists are gone.
+  - Now Playing's rating picker (hold the star) and the menus' ratings are stars too: ★★★☆☆.
+  - Card apps: each time an app's page opens the app is told (`/tmp/q2-<id>.open`), so Pocket can sync with Pocket Casts at every opening.
+  - Home: the Shortcut row is **Pocket**, which opens the Pocket app (Pocket Casts) at once, in place of Favorites or Rockbox. Appearance no longer has a Shortcut row.
+  - Display: **Appearance → Floating Cover** makes the cover beside Home's menu drift slowly, as it did before; off (the default), it stays still. It takes the place of Centred Now Playing.
+  - App Store: **Bandcamp** is in the list, so every app in Q2 Pod's test builds is here too, and **Add an App** adds any other from your phone.
+
 - **Q2 Podcast 1.7.5**:
   - Now Playing: on a Pocket episode the heart is drawn as a star, as Pocket Casts has it: filled when the episode is starred. Other tracks keep the heart.
   - App Store: **Pocket** installs, now that its first release is out.

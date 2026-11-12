@@ -323,10 +323,10 @@ PAYLOAD = {'SETTING_LIGHT': ('Light Mode', 'LIGHT', False), 'SETTING_ACCENT': ('
            'SETTING_ROUNDED': ('Rounded Corners', 'ROUNDED', True), 'SETTING_HOME': ('Home', 'HOME', False),
            'SETTING_SHORTCUT': ('Shortcut', 'SHORTCUT', False), 'SETTING_BATTERY': ('Battery', 'BATTERY', False),
            'SETTING_TIMETITLE': ('Time in Title', 'TIMETITLE', True),
-           'SETTING_NPCENTRED': ('Centred Now Playing', 'NPCENTRED', True)}
+           'SETTING_HOMEPAN': ('Floating Cover', 'HOMEPAN', True)}  # Q2 Podcast's, in Centred Now Playing's place
 # st's field for each stored key a theme's preset writes
 STATE = {'THEME': 'theme', 'LIGHT': 'light', 'ACCENT': 'accent', 'ROUNDED': 'rounded', 'HOME': 'home', 'SHORTCUT': 'shortcut',
-         'BATTERY': 'battery', 'TIMETITLE': 'time_title', 'NPCENTRED': 'np_centred'}
+         'BATTERY': 'battery', 'TIMETITLE': 'time_title', 'HOMEPAN': 'home_pan'}
 
 
 def appearance_titles(t):
@@ -389,8 +389,8 @@ def test_appearance_lists_theme_then_minimals_options_in_its_order(fw):
     # the running theme's name, and Accent at Minimal's own default, under its own key
     assert read['Theme'] == t['name'] and read['Accent'] == accent_name(t, host.tools_theme.accent_default(t))
     # nothing stored: the payload's own defaults (dark, square, Split, the clock in the title); no Rockbox: Favorites
-    assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Shortcut'], read['Time in Title']) == \
-        ('Off', 'Off', 'Split', 'Favorites', 'On')
+    assert (read['Light Mode'], read['Rounded Corners'], read['Home'], read['Time in Title']) == ('Off', 'Off', 'Split', 'On')
+    assert 'Shortcut' not in read  # Q2 Podcast: Home's Shortcut row is Pocket
 
 
 def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
@@ -405,8 +405,8 @@ def test_classic_appearance_rows_read_title_and_value_and_its_own_options(fw):
     own = [o for o in t['opts'] if o['setting'] == 'SETTING_OWN']
     assert own and [read[o['label']] for o in own] == [o['names'][o['def']] for o in own]  # each at its default
     # nothing stored: the payload's own defaults, Battery's Icon one of Classic's two
-    assert (read['Light Mode'], read['Home'], read['Shortcut'], read['Battery'], read['Time in Title']) == \
-        ('Off', 'Split', 'Favorites', 'Icon', 'On')
+    assert (read['Light Mode'], read['Home'], read['Battery'], read['Time in Title']) == ('Off', 'Split', 'Icon', 'On')
+    assert 'Shortcut' not in read  # Q2 Podcast: Home's Shortcut row is Pocket
 
 
 def clicks_of(fw, ui, page, title, n):
@@ -446,6 +446,7 @@ def test_classic_accent_takes_classic_blue_after_green_and_skips_ivory(fw):
     assert [k for k, _ in writes(fw)] == ['CLASSIC_LIGHT_ACCENT'] * 4
 
 
+@pytest.mark.skip(reason="Q2 Podcast: Appearance has no Shortcut row (Home's is Pocket)")
 def test_shortcut_cycles_in_its_menu_order(fw):
     ui = Ui(fw)
     page = appearance(fw, ui, SHORTCUT=b'0')
@@ -507,7 +508,7 @@ def test_corners_drop_the_art_cache_only_where_art_takes_them(fw, theme):
     assert after[0] - before[0] == unload and after[1] > before[1]  # the screen repaints either way
 
 
-@pytest.mark.parametrize('title, key', [('Time in Title', 'TIMETITLE'), ('Centred Now Playing', 'NPCENTRED')])
+@pytest.mark.parametrize('title, key', [('Time in Title', 'TIMETITLE'), ('Floating Cover', 'HOMEPAN')])
 def test_a_switch_from_smart_awake_on_redraws_only_its_toggle(fw, title, key):
     ui = Ui(fw)
     page = appearance(fw, ui)
@@ -929,6 +930,8 @@ class Np:
     def __init__(self, fw, ui, st, info):
         st('np_win', C.c_void_p).value = info.win.addr
         self.slide = ui.add('view', info.win, name='slide_view')
+        for name in ('view_album', 'view_lyric', 'view_info'):  # the page in front is found by its name (np_front)
+            ui.add('view', self.slide, name=name)
         self.slide.props['value'] = 2  # view_info
         st('np_slide', C.c_void_p).value = self.slide.addr
         fw.var('g_backlight_status', C.c_ubyte).value = 1
@@ -2518,6 +2521,8 @@ class Localclass:
     def __init__(self, fw, lib, rows=None):
         self.fw, self.lib, self.rows = fw, lib, rows or []
         fw.mock('stock_localclass_trampoline', lambda cls, *_: self.stock())
+        # AWTK's, which spoken() asks (Q2 Podcast's Starred and Recently Played hold spoken songs alone)
+        fw.mock('tk_str_start_with', lambda s, prefix, *_: bool(s) and C.string_at(s).startswith(C.string_at(prefix)))
         self.load = fw.fn('ringnav_localclass', C.c_int, C.c_int)
         self.timers = []
         fw.mock('timer_add', lambda fn, ctx, ms, *_: self.timers.append((fn, ms)) or len(self.timers))
@@ -2742,15 +2747,16 @@ def test_a_playlist_hides_its_spoken_songs(fw, records):
 
 @pytest.mark.parametrize('cls', [0xf00a, 0xf008, 0xf007])
 def test_stored_lists_hide_discovery_and_take_the_librarys_titles(fw, records, cls):
+    # (Podcast paths: Q2 Podcast's Starred and Recently Played hold spoken songs alone; Discovery is no spoken one.)
     lib = Library(fw)
     Files(fw, {'/mnt/data/q2-library-scope': b'0/mnt/mmc/Discovery\n'})
-    played = [records.song(title=b'Kept', path=b'/mnt/mmc/Music/a.flac'),
-              records.song(path=b'/mnt/mmc/Music/b.cue', cue=60),  # played from Folder: no title
+    played = [records.song(title=b'Kept', path=b'/mnt/mmc/Podcasts/Show/a.flac'),
+              records.song(path=b'/mnt/mmc/Podcasts/Show/b.cue', cue=60),  # played from Folder: no title
               records.song(title=b'Hidden', path=b'/mnt/mmc/Discovery/c.flac'),
-              records.song(path=b'/mnt/mmc/Music/d.flac')]
-    library = [records.song(title=b'Track 1', path=b'/mnt/mmc/Music/b.cue', cue=0),
-               records.song(title=b'Track 2', path=b'/mnt/mmc/Music/b.cue', cue=60),
-               records.song(title=b'Dee', path=b'/mnt/mmc/Music/d.flac')]
+              records.song(path=b'/mnt/mmc/Podcasts/Show/d.flac')]
+    library = [records.song(title=b'Track 1', path=b'/mnt/mmc/Podcasts/Show/b.cue', cue=0),
+               records.song(title=b'Track 2', path=b'/mnt/mmc/Podcasts/Show/b.cue', cue=60),
+               records.song(title=b'Dee', path=b'/mnt/mmc/Podcasts/Show/d.flac')]
     lib.query('getAllMusic', library)
     load = Localclass(fw, lib, played)
     assert load(cls) == 3 and load.shown() == [b'Kept', b'Track 2', b'Dee']
@@ -2759,7 +2765,7 @@ def test_stored_lists_hide_discovery_and_take_the_librarys_titles(fw, records, c
 
 def test_a_cue_track_takes_its_own_title_where_its_siblings_slot_comes_first(fw, records):
     lib = Library(fw)
-    path = b'/mnt/mmc/Music/b.cue'
+    path = b'/mnt/mmc/Podcasts/Show/b.cue'
     first, second = records.song(title=b'Track 1', path=path), records.song(title=b'Track 2', path=path)
     # setup: a CUE start for the second whose key (the C's own listen_key) lands in the first's slot, the index of
     # two songs having 4 (at most half full)
@@ -2780,8 +2786,9 @@ def test_a_stored_list_with_nothing_to_look_up_never_reads_the_library(fw, recor
     lib = Library(fw)
     # every song titled, but for a folder row, or a song with no path to find it by
     other = records.song(name=b'b.flac', kind=4 if row == 'folder' else 8)
-    load = Localclass(fw, lib, [records.song(title=b'A', path=b'/mnt/mmc/a.flac'), other])
-    assert load(0xf00a) == 2 and not fw.calls('getAllMusic')
+    load = Localclass(fw, lib, [records.song(title=b'A', path=b'/mnt/mmc/Podcasts/a.flac'), other])
+    # Q2 Podcast's Starred: spoken songs and other rows (a folder); a song without a path is no spoken one
+    assert load(0xf00a) == (2 if row == 'folder' else 1) and not fw.calls('getAllMusic')
 
 
 def test_an_untagged_song_with_no_path_reads_its_name_as_stored(fw, records):

@@ -901,7 +901,7 @@ def test_a_worker_done_before_pthread_create_returns_is_still_reported(w):
 
 # Q2 Shelf: System settings' App Store
 
-LIST_URL = 'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list'
+LIST_URL = 'https://raw.githubusercontent.com/group-a-study/q2-podcast/main/sources.list'  # Q2 Podcast's own list
 STAGING = '/mnt/mmc/.q2/staging'
 
 

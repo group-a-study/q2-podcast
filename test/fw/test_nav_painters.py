@@ -2492,12 +2492,14 @@ def test_a_headset_resumes_only_what_was_going(fw, resume, saved, start):
 def lyrics(fw, st, ui, rows=20, row_h=20, h=178, np=False, page=1):
     g(fw, 'g_backlight_status', 1)
     win = ui.window('playing_page')
-    lrc = ui.add('scroll_view', win, (0, 60, 375, h), 'scroll_lrc')
+    # the art first: the lyrics are page 1, the page in front found by what it holds (np_front)
+    slide = ui.add('slide_view', win, (0, 0, 375, 320), 'slide', value=page)
+    ui.add('view', slide, (0, 0, 375, 320), 'view_album')
+    lrc = ui.add('scroll_view', slide if np else win, (0, 60, 375, h), 'scroll_lrc')
     for i in range(rows):
         ui.add('label', lrc, (0, i * row_h, 375, row_h))
     lrc.int_at(O['VIEW_CONTENT_H']).value = rows * row_h
     if np:
-        slide = ui.add('slide_view', win, (0, 0, 375, 320), 'slide', value=page)
         st('np_lrc', C.c_void_p).value, st('np_slide', C.c_void_p).value, st('np_win', C.c_void_p).value = lrc.addr, slide.addr, win.addr
     return lrc
 

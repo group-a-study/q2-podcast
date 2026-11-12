@@ -553,16 +553,18 @@ def now_playing(q2):
     return C.string_at(q2.fw.calls('stock_ui_load_trampoline')[-1][1][0])
 
 
-def test_centred_now_playing_loads_its_page_from_the_next_open_and_after_a_restart(q2):
-    own = now_playing(q2)
+def test_now_playing_is_always_the_centred_page_and_floating_cover_saves_itself(q2):
+    """Q2 Podcast: one Now Playing page (playing_page_stock) under every theme; Floating Cover, in the place
+    Centred Now Playing had, only saves its switch (Home's art reads it)."""
+    page = now_playing(q2)
+    assert page == b'playing_page_stock'
     appearance(q2)
-    assert q2.screen.switch('Centred Now Playing') == 'switch_off'
-    q2.screen.click('Centred Now Playing')
-    assert q2.screen.switch('Centred Now Playing') == 'switch_on' and q2.flash.get('IPOD', 'NPCENTRED') == '1'
-    centred = now_playing(q2)
-    assert centred != own
+    assert q2.screen.switch('Floating Cover') == 'switch_off'
+    q2.screen.click('Floating Cover')
+    assert q2.screen.switch('Floating Cover') == 'switch_on' and q2.flash.get('IPOD', 'HOMEPAN') == '1'
+    assert now_playing(q2) == page
     q2.power_on()
-    assert now_playing(q2) == centred
+    assert now_playing(q2) == page
 
 
 # Home (docs/ipod.md#home): Split, Full or Carousel, and its Shortcut row.
@@ -596,18 +598,15 @@ def test_home_takes_a_new_layout_at_once_and_boots_into_it(q2):
     assert shown[w['slide_menu']] and not shown[w['list_view_home']] and not shown[w['img_homeart']]
 
 
-def test_the_shortcut_picked_names_homes_row_now_and_after_a_restart(q2):
+def test_home_s_shortcut_row_is_pocket_now_and_after_a_restart(q2):
+    """Q2 Podcast: Home's Shortcut row is Pocket, and Appearance has no Shortcut row."""
     w = home(q2)
-    before = q2.screen.texts[w['label_rockbox']]
+    assert q2.screen.texts[w['label_rockbox']] == 'Pocket'
     appearance(q2)
-    assert q2.screen.row('Shortcut') == f'Shortcut: {before}'
-    q2.screen.click('Shortcut')
-    after = q2.screen.row('Shortcut').split(': ', 1)[1]
-    assert after != before and q2.screen.texts[w['label_rockbox']] == after
-    assert q2.flash.get('IPOD', 'SHORTCUT').isdigit()
+    assert not [r for r in q2.screen.rows() if r.startswith('Shortcut')]
     q2.power_on()
     w = home(q2)
-    assert q2.screen.texts[w['label_rockbox']] == after
+    assert q2.screen.texts[w['label_rockbox']] == 'Pocket'
 
 
 # Display settings saved and read back after a restart.

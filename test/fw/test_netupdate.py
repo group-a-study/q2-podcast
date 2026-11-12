@@ -1691,7 +1691,7 @@ def test_the_store_loads_its_list_then_not_again_for_ten_minutes(fw):
     assert s.run() == 0 and s.sh.job == 0 and s.toasts == ['All apps are up to date']  # none installed has a newer one
     assert s.labels() == ['Install'] and card.files[SOURCES] == b'me/q2-foo Foo\n' and s.sh.next[0].latest == b'2.0'
     assert s.check_label().strip() == ''  # its detail blank again, the list loaded
-    assert net.urls == [b'https://raw.githubusercontent.com/DiamondBond/q2-pod/main/sources.list',
+    assert net.urls == [b'https://raw.githubusercontent.com/group-a-study/q2-podcast/main/sources.list',  # Q2 Podcast's list
                         b'https://api.github.com/repos/me/q2-foo/releases/latest']
     s.close()
     s.seconds += 600

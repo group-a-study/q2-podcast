@@ -28,7 +28,7 @@ RATINGS, ALBUM_RATINGS, LENGTHS = '/mnt/data/ringnav-ratings', '/mnt/data/ringna
 FAV_CLICK = 0x52b154  # Now Playing's heart: stock's My Fav toggle
 TIDAL_DIR, SPOT_DIR = '/mnt/mmc/.tidal', '/mnt/mmc/.spotify'
 DOT = '·'
-HEART, NO_HEART = '♥', '♡'
+HEART, NO_HEART = '★', '☆'  # Q2 Podcast's ratings are stars
 CLICK = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
 TICK = C.CFUNCTYPE(C.c_int, C.c_void_p)
 TYPES = {'window_create': 'window', 'list_item_create': 'list_item', 'hscroll_label_create': 'hscroll_label',
@@ -604,7 +604,7 @@ def test_an_empty_ratings_list_says_how_to_rate(fw, ui, song):
     Library(fw, ui, [song(b'/m/a.flac', b'A')])
     Files(fw)
     call(fw, 'rated_open', 0)
-    assert ui.rows(ui.top()) == [('No songs yet', 'Hold the heart on Now Playing to rate')]
+    assert ui.rows(ui.top()) == [('No songs yet', 'Hold the star on Now Playing to rate')]
     item, = ui.kids[ui.view(ui.top())]
     assert [fn for w, e, fn, _ in ui.handlers if w == item and e == EVT_CLICK] == [0]  # nothing to play
 
@@ -1096,10 +1096,10 @@ def test_classic_s_picker_counts_hearts_and_a_tap_outside_leaves_it(fw, ui, song
     heart.hold()
     caption, images = heart.picker()
     on, off = images[0], images[1]  # Classic's own lit and unlit heart
-    assert caption == '1 Heart' and images == hearts(1, on, off) and on != off
+    assert caption == '1 Star' and images == hearts(1, on, off) and on != off
     assert not {on, off} & {'play_fav', 'play_unfav'}  # not Now Playing's
     heart.key(KEY_NEXT)
-    assert heart.picker() == ('2 Hearts', hearts(2, on, off))
+    assert heart.picker() == ('2 Stars', hearts(2, on, off))
     out = ui.lookup(heart.win, 'rate_out', 0)
     assert out not in ui.hidden and out not in ui.dull  # a tap outside the panel reaches it
     assert ui.handler(out, EVT_CLICK)() == STOP
@@ -1964,37 +1964,38 @@ def boot(fw, st, theme=None):
     st('geom').value = fw.fn('theme_geom', C.c_int, C.c_void_p)(fw.fn('theme', C.c_void_p)())
 
 
-# Minimal's set has Library icons; Classic's has none, so its Library leads with Search (library_search).
-LEADS = [(None, []), (b'1', ['Search'])]
+# Q2 Podcast's Library (home.c ringnav_localmusic): Podcasts and Audiobooks with their folders, stock's Recently
+# Added, My Fav and Recent as Episodes, Starred and Recently Played, Playlist, then stock's music rows hidden and
+# Update Local Music last. No Search, Shuffle or other added rows, under any theme.
+PODCAST_LIBRARY = [('Episodes', True), ('Starred', True), ('Playlist', True), ('Recently Played', True),
+                   ('All Songs', False), ('Album', False), ('Artist', False), ('Genre', False), ('Frequent', False),
+                   ('Hi-Res', False), ('Update Local Music', True)]
+THEMES_BOOTED = [None, b'1']
 
 
-@pytest.mark.parametrize('theme, lead', LEADS)
-def test_the_library_s_rows_in_their_order(fw, ui, st, theme, lead):
+@pytest.mark.parametrize('theme', THEMES_BOOTED)
+def test_the_library_s_rows_in_their_order(fw, ui, st, theme):
     boot(fw, st, theme)
     win, view = library(fw, ui)
-    # My Fav and Frequent hidden, kept in the page for stock's index: Ratings and Most Played list theirs
-    assert page_rows(ui, view) == [(c, c not in ('My Fav', 'Frequent')) for c in lead + [
-        'Shuffle', 'Artist', 'Album', 'All Songs', 'Genre', 'Era', 'Playlist', 'Ratings', 'My Fav', 'Recently Added', 'Recent',
-        'Most Played', 'Frequent', 'Hi-Res', 'Long Songs', 'Games', 'Update Local Music']]
+    assert page_rows(ui, view) == PODCAST_LIBRARY
 
 
-def test_the_library_adds_the_card_s_media_folders_and_upload(fw, ui):
-    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'], token=b'x')
-    rows = [c for c, _ in page_rows(ui, view)]
-    assert rows[rows.index('Long Songs'):] == ['Long Songs', 'Podcasts', 'Videos', 'Games', 'Upload Scrobbles',
-                                               'Update Local Music']
+def test_the_library_adds_the_card_s_podcasts_and_audiobooks_only(fw, ui):
+    win, view = library(fw, ui, folders=['/mnt/mmc/podcasts', '/mnt/mmc/AUDIOBOOKS', '/mnt/mmc/VIDEOS', '/mnt/mmc/Music'],
+                        token=b'x')
+    assert [c for c, shown in page_rows(ui, view) if shown] == ['Podcasts', 'Episodes', 'Starred', 'Playlist',
+                                                                'Recently Played', 'Audiobooks', 'Update Local Music']
 
 
 def test_the_library_s_added_rows_have_no_name_for_stock_s_click(fw, ui):
-    win, view = library(fw, ui)
-    stock = {ui.kids[item][0] for item in ui.kids[view] if row_text(ui, item) in LIBRARY_STOCK}
-    added = [ui.kids[item][0] for item in ui.kids[view] if row_text(ui, item) not in LIBRARY_STOCK]
+    win, view = library(fw, ui, folders=['/mnt/mmc/Podcasts', '/mnt/mmc/Audiobooks'])
+    added = [ui.kids[item][0] for item in ui.kids[view] if row_text(ui, item) in ('Podcasts', 'Audiobooks')]
+    stock = [ui.kids[item][0] for item in ui.kids[view] if row_text(ui, item) not in ('Podcasts', 'Audiobooks')]
+    assert len(added) == 2 and len(stock) == len(LIBRARY_STOCK)
     assert all(b in ui.name for b in stock) and not any(b in ui.name for b in added)
     clicks = {row_text(ui, item): fn for item in ui.kids[view] for w, e, fn, _ in ui.handlers
               if w == ui.kids[item][0] and e == EVT_CLICK}
-    assert clicks['Shuffle'] == ui.fn('shuffle_menu') and clicks['Most Played'] == ui.fn('most_played')
-    assert clicks['Ratings'] == ui.fn('ratings_menu') and clicks['Long Songs'] == ui.fn('long_songs')
-    assert clicks['Era'] == ui.fn('era_menu')
+    assert clicks['Podcasts'] == clicks['Audiobooks'] == ui.fn('media_click')
 
 
 def test_a_library_that_is_not_stock_s_is_left(fw, ui):
@@ -2002,30 +2003,26 @@ def test_a_library_that_is_not_stock_s_is_left(fw, ui):
     assert [c for c, _ in page_rows(ui, view)] == LIBRARY_STOCK + ['more']
 
 
-def test_classic_s_library_leads_with_search_and_drops_its_icons(fw, ui, st):
+def test_classic_s_library_drops_its_icons_and_has_no_search(fw, ui, st):
     boot(fw, st, b'1')
-    assert fw.fn('library_search', C.c_int)() == 1  # Classic's set has no Library icons
-    win, view = library(fw, ui)
-    assert page_rows(ui, view)[:2] == [('Search', True), ('Shuffle', True)]
+    win, view = library(fw, ui, folders=['/mnt/mmc/Podcasts'])
+    assert page_rows(ui, view)[:2] == [('Podcasts', True), ('Episodes', True)]
     images = [w for item in ui.kids[view] for w in ui.subtree(item) if ui.kind[w] == 'image_create']
     icons = [w for w in images if ui.image[w] != 'list_into']
     assert icons and all(w in ui.hidden for w in icons)
     assert not [w for w in images if ui.image[w] == 'list_into' and w in ui.hidden]  # the chevrons stay
-    search, = [ui.kids[item][0] for item in ui.kids[view] if row_text(ui, item) == 'Search']
-    assert [fn for w, e, fn, _ in ui.handlers if w == search and e == EVT_CLICK] == [C.cast(fw.lib.stock_search, C.c_void_p).value]
 
 
-@pytest.mark.parametrize('theme, lead', LEADS)
+@pytest.mark.parametrize('theme', THEMES_BOOTED)
 @in_fork
-def test_home_s_library_list_is_the_library_s_rows(fw, ui, st, theme, lead):
+def test_home_s_library_list_is_the_library_s_rows(fw, ui, st, theme):
     log = (C.c_long * 3)()
     stock_stub(O['LOCALMUSIC_BG'], 0, log)
     boot(fw, st, theme)
     _, page = library(fw, ui)  # the Library page's own rows
     win, view = stock_page(ui, 'scroll_view_localmusic', *[(c, None, str(i)) for i, c in enumerate(LIBRARY_STOCK)])
     fw.fn('library_rows', None, C.c_void_p)(win)
-    rows = [c for c, _ in page_rows(ui, view)]
-    assert page_rows(ui, view) == page_rows(ui, page) and rows[:len(lead) + 2] == lead + ['Shuffle', 'Artist']
+    assert page_rows(ui, view) == page_rows(ui, page) == PODCAST_LIBRARY
     assert log[0] == win  # its play gif's timer stopped, as the page's background does
     assert [c[1][:2] for c in fw.calls('widget_off_by_ctx')] == [(win, win)]
 

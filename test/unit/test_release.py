@@ -73,7 +73,7 @@ def test_validate_runs_every_suite(tmp_path, scripts):
 
 @pytest.mark.parametrize('field,value,message', [
     ('version', 'V000I', '^Wrong build identity$'),
-    ('update_repo', 'someone/fork', "^Network Update fetches someone/fork's releases, not DiamondBond/q2-pod's$"),
+    ('update_repo', 'someone/fork', "^Network Update fetches someone/fork's releases, not group-a-study/q2-podcast's$"),  # Q2 Podcast's REPO
     ('input_zip_sha256', 'x', '^Wrong stock identity$'),
     ('stock_demo_sha256', 'x', '^Wrong stock identity$'),
     ('rootfs_sha256', 'x', 'rootfs.squashfs: hash mismatch$'),

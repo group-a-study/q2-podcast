@@ -3268,9 +3268,11 @@ const char *now_tag(void *r, int field) {
 }
 
 #define HOME_PW (375 - HOME_SPLIT_W) /* Split's art panel, client_h() high */
-/* Split's art stays still, as it was before upstream's pan (fork-only: the user keeps the still art).
- * 1 brings back the pan: the cover zoomed DRIFT_ZOOM_PCT, creeping across its panel (home_drift). */
-#define HOME_PAN 0
+/* Split's art pans, the cover zoomed DRIFT_ZOOM_PCT and creeping across its panel (home_drift), only
+ * with Floating Cover on (Q2 Podcast's Appearance row, IPOD HOMEPAN); else it stays still, as it was
+ * before upstream's pan. */
+#define HOME_PAN home_pan_on()
+extern int home_pan_on(void);
 /* iPod Home (docs/ipod.md): the playing track's art beside the list. */
 static struct {
     void *win, *art, *list, *sets; /* sets: the Settings list, in the list's place while open */
@@ -3304,7 +3306,7 @@ static struct {
     int clipped;
 } home __attribute__((section(".scratch")));
 extern int ipod_home(void), ipod_home_rockbox(void), home_shortcut_open(void *, void *),
-    home_lib_on(void), row_preview_on(void), library_search(void);
+    home_lib_on(void), row_preview_on(void);
 extern void library_rows(void *list), stream_rows(void *list);
 extern void home_pane_read(int *services, int *games, int *free_tenths);
 extern int library_count(const char *sql), msg_counting(void);
@@ -3887,7 +3889,7 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
     int kind = PANE_LIBRARY;
     if (!row_preview_on()) kind = PANE_NOW; /* Row Preview off: Now Playing's on every row */
     else if (list == home.sets) kind = PANE_SETTINGS;
-    else if (list == home.lib) kind = id == library_search() ? PANE_SHUFFLE : PANE_LIBRARY;
+    else if (list == home.lib) kind = PANE_LIBRARY; /* Q2 Podcast's Library has no Shuffle row */
     else if (list == home.stream) {
         kind = PANE_SERVICE;
         home.row_image = child_of_type(row, "image");
@@ -3903,7 +3905,8 @@ void coverflow_home_row(void *surface, void *row, int id, int painting) {
         if (kind == PANE_ROCKBOX) { /* the Shortcut row: the Games icon, its count only for Games;
                                      * the Podcasts and Audiobooks folders, Folder's icon */
             const char *s = ipod_home_shortcut();
-            kind = !tk_strcmp(s, "Games")                                 ? PANE_GAMES
+            kind = !tk_strcmp(s, "Pocket")                                  ? PANE_NOW
+                   : !tk_strcmp(s, "Games")                                 ? PANE_GAMES
                    : !tk_strcmp(s, "Rockbox") || !tk_strcmp(s, "Groovebox") ? PANE_ROCKBOX
                    : !tk_strcmp(s, "Shuffle") ? PANE_SHUFFLE
                    : !tk_strcmp(s, "Podcasts") || !tk_strcmp(s, "Audiobooks") ? PANE_FOLDER
@@ -4002,8 +4005,10 @@ void coverflow_home_art(void *top) {
     const char *cover;
     unsigned char type = now_cover(r, &cover);
     unsigned album = tags_key(now_tag(r, REC_ARTIST), now_tag(r, REC_ALBUM));
+    unsigned char pan = (unsigned char)HOME_PAN; /* a change draws it again, still or panning */
     unsigned key = hash_bytes(hash_bytes(fnv(FNV_SEED, (const unsigned char *)path), &type, 1),
-                              (const unsigned char *)&album, sizeof(album));
+                              (const unsigned char *)&album, sizeof(album)) ^
+                   pan;
     if (key == home.key) return;
     home.key = key;
     home.pane = 0;

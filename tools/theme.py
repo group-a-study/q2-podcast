@@ -20,7 +20,7 @@ SETTINGS = {'light': ('SETTING_LIGHT', ('off', 'on', 'auto')), 'accent': ('SETTI
             'battery': ('SETTING_BATTERY', ('icon', 'percent', 'both', 'inside')),
             'shortcut': ('SETTING_SHORTCUT', ('rockbox', 'artists', 'albums', 'favorites', 'rated_albums', 'shuffle', 'games', 'playlists', 'podcasts', 'audiobooks', 'groovebox')),
             'time_title': ('SETTING_TIMETITLE', ('off', 'on')),
-            'np_layout': ('SETTING_NPCENTRED', ('ipod', 'centred'))}
+            'home_pan': ('SETTING_HOMEPAN', ('still', 'float'))}
 ACCENT_KEYS = {'ACCENT': '&st.accent', 'MINIMAL_ACCENT': '&st.minimal_accent'}
 # The IPOD keys the payload reads itself (theme_engine.c setting_keys[], every "IPOD", "<KEY>" literal): a
 # theme's own key is never one of them.

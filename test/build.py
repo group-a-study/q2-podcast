@@ -348,9 +348,15 @@ def validate_assets(directory):
         assert changed[xx+name] == dict(original_sha256=sha(old), sha256=sha(new))
         if not isinstance(size, tuple):  # transparent corners, not black, over a selected row
             assert imagemagick('png:-', '-format', '%[fx:p{0,0}.a]', 'info:', data=new) == b'0', name
-    for name in ('play_star.png', 'play_unstar.png'):  # podcast.c's star, the hearts' 28 px
-        star = read('rootfs.squashfs', xx+name)
-        assert star == (ROOT/'assets/icons'/name).read_bytes() and png_header(star) == (28, 28, 8, 6), name
+    from ipod import PC_ICONS, STAR_ICONS
+    for name, star in STAR_ICONS.items():  # Q2 Podcast: My Fav's heart is Pocket Casts' star, the hearts' 28 px
+        icon = read('rootfs.squashfs', xx+name)
+        assert icon == (ROOT/'assets/icons'/star).read_bytes() and png_header(icon) == (28, 28, 8, 6), name
+    for name in PC_ICONS:  # and Now Playing's buttons beside the art, drawn as the star is
+        icon = read('rootfs.squashfs', xx+name)
+        assert icon == (ROOT/'assets/icons'/name).read_bytes() and png_header(icon) == (28, 28, 8, 6), name
+    starred = read('rootfs.squashfs', xx+'local_starred.png')  # the Library's Starred row
+    assert starred == (ROOT/'assets/icons/local_starred.png').read_bytes() and png_header(starred) == (52, 52, 8, 6)
     games = read('rootfs.squashfs', xx+'local_games.png')
     assert games == (ROOT/'assets/icons/local_games.png').read_bytes()
     assert png_header(games) == (52, 52, 8, 6)
@@ -473,6 +479,16 @@ def validate_assets(directory):
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
+    # Q2 Podcast's Now Playing: the buttons beside the art, each its glyph; the pages in order, the lyrics (a
+    # transcript) in their hidden view until podcast.c moves them in; the dots under the bar, between the times
+    from ipod import PC_IMAGES, PC_SIDE, PC_DOTS, PC_TOP
+    assert [named[n].get('image') for n in PC_SIDE] == list(PC_IMAGES)
+    nodes = {n[2].get('name'): n for n in walk(stock_page)}
+    assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_info']
+    assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric'] and named['view_pc_shelf']['visible'] == 'false'
+    assert PC_TOP + nodes['slide_indicator1'][1][1] == PC_DOTS and nodes['img_playmode'][2]['visible'] == 'false'
+    album = [c[2]['name'] for c in nodes['view_album'][3]]
+    assert {'scrlabel_title', 'scrlabel_artist', *PC_SIDE} <= set(album), album
     # Curly quotes draw the straight glyphs and ♡ takes ♥'s box and advance; other tables keep their
     # stock bytes (head: its checksum).
     from build import QUOTES

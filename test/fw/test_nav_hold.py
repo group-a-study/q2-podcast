@@ -1508,7 +1508,7 @@ def test_a_favourite_reads_remove_and_its_rating_full(hold, recs, ui, st):
     hold.hold()
     rows = hold.menu()
     assert 'Remove from Favourites' in rows and 'Add to Favourites' not in rows
-    assert rows[-1] == 'Rate  ' + '♥' * 5
+    assert rows[-1] == 'Rate  ' + '★' * 5
 
 
 def test_go_to_is_left_out_where_its_page_is_open(hold, recs, ui):
@@ -1878,7 +1878,7 @@ def test_an_albums_favourite_is_kept_for_its_next_menu(hold, recs, ui):
     assert not ui.toasts and '/mnt/data/ringnav-album-ratings' in hold.card.files
     hold.hold()
     rows = hold.menu()
-    assert 'Remove from Favourites' in rows and 'Rate Album  ' + '♥' * 5 in rows
+    assert 'Remove from Favourites' in rows and 'Rate Album  ' + '★' * 5 in rows
 
 
 def test_rate_album_opens_the_picker_on_its_hearts_and_rates_that_album(hold, recs, ui, st, fw):
@@ -1889,12 +1889,12 @@ def test_rate_album_opens_the_picker_on_its_hearts_and_rates_that_album(hold, re
     hold.pick('Add to Favourites')  # Help!: five hearts
     hold.hold()
     hold.menu()
-    hold.pick('Rate Album  ' + '♥' * 5)
+    hold.pick('Rate Album  ' + '★' * 5)
     assert st('rate_on', C.c_void_p).value == hold.page
     key = fw.fn('rate_key', C.c_int, C.c_void_p, C.c_uint)
     assert key(hold.page, O['KEY_PREV']) and key(hold.page, O['KEY_CENTER'])  # a heart less than it opened on, kept
     hold.hold()
-    assert 'Rate Album  ' + '♥' * 4 + '♡' in hold.menu()
+    assert 'Rate Album  ' + '★' * 4 + '☆' in hold.menu()
     ui.key(hold.dialog, KEY_RETURN)
     fw.fn('ringnav_select', None, C.c_void_p, C.c_int, C.c_int)(hold.list, 1, 2)
     hold.hold()

@@ -711,7 +711,8 @@ def corner_table():
 
 
 # The rating panel's hearts: filled, or the outline alone, in the panel's ink; 32 x 30.
-RATE_HEART = 'M16 28C6 20 2 15 2 9.6 2 2 12 0 16 7.2 20 0 30 2 30 9.6 30 15 26 20 16 28Z'
+# Q2 Podcast: the picker's "hearts" are stars, as Now Playing's heart is (a five-point star in the heart's box)
+RATE_HEART = 'M16.00 1.00 19.53 10.75 29.89 11.09 21.71 17.45 24.58 27.41 16.00 21.60 7.42 27.41 10.29 17.45 2.11 11.09 12.47 10.75Z'
 RATE_HEART_INKS = {'l': 0x000000, 'd': 0xffffff}
 def rate_heart(on, rgb):
     shape = path(RATE_HEART)

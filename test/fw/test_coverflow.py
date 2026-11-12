@@ -2673,7 +2673,8 @@ def test_the_streaming_row_opens_the_page_in_full(fw, stock_bg):
     assert ui.click(h.rows['img_services']) == [9] and stock_bg[1] == 0
 
 
-@pytest.mark.parametrize('shortcut, shown, label', (('0', 0, 'Rockbox'), ('6', 1, 'Games')))
+# Q2 Podcast: the Shortcut row is Pocket, after Folder whatever SHORTCUT holds or the card has (theme_engine.c).
+@pytest.mark.parametrize('shortcut, shown, label', (('0', 1, 'Pocket'), ('6', 1, 'Pocket')))
 def test_the_shortcut_row_sits_after_folder_unless_rockbox_is_missing(fw, shortcut, shown, label):
     themed(fw, CLASSIC, SHORTCUT=shortcut)
     ui = Ui(fw)
@@ -2735,8 +2736,8 @@ def test_the_pane_follows_the_highlighted_row(fw, name, kind):
     assert not ui.dirty  # the same row: nothing compared or drawn again
 
 
-@pytest.mark.parametrize('shortcut, kind', (('6', PANE_GAMES), ('0', PANE_ROCKBOX), ('5', PANE_SHUFFLE), ('8', PANE_FOLDER),
-                                            ('9', PANE_FOLDER), ('1', PANE_LIBRARY), ('4', PANE_LIBRARY)))
+# Q2 Podcast: the Pocket row shows Now Playing's pane, whatever SHORTCUT holds.
+@pytest.mark.parametrize('shortcut, kind', (('6', PANE_NOW), ('0', PANE_NOW), ('3', PANE_NOW)))
 def test_the_shortcut_row_shows_what_its_shortcut_opens(fw, shortcut, kind):
     _, ui, h, _ = home_open(fw, SHORTCUT=shortcut)
     assert home_row(fw, h.view, h.rows['img_rockbox']) == kind
@@ -2755,11 +2756,11 @@ def test_a_paint_s_row_change_shows_in_the_next_frame(fw):
 
 def test_the_pane_in_home_s_other_lists(fw):
     _, ui, h, _ = home_open(fw)
-    search = fw.fn('library_search', C.c_int)()
     sets_view, lib_view, stream_view = (ui[lst].kids[0] for lst in (h.sets, h.lib, h.stream))
     assert home_row(fw, sets_view, ui[sets_view].kids[0]) == PANE_SETTINGS
-    assert home_row(fw, lib_view, ui[lib_view].kids[0], id=search) == PANE_SHUFFLE  # Search's row: Shuffle's count, the songs
-    assert home_row(fw, lib_view, ui[lib_view].kids[1], id=search + 1) == PANE_LIBRARY
+    # Q2 Podcast's Library has no Shuffle row: every row is the Library's
+    assert home_row(fw, lib_view, ui[lib_view].kids[0], id=0) == PANE_LIBRARY
+    assert home_row(fw, lib_view, ui[lib_view].kids[1], id=1) == PANE_LIBRARY
     assert home_row(fw, stream_view, ui[stream_view].kids[0]) == PANE_SERVICE
     ui.dirty.clear()
     home_row(fw, stream_view, ui[stream_view].kids[1])

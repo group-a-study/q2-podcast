@@ -1873,6 +1873,15 @@ static int closed(void *ctx, void *event) {
 /* Slot k's page, its first level op (args: "\t" and escaped each) titled title: the app started if
  * it isn't (its QR code shown at the first answer when qr); gone from the card, the page says so.
  * 1 when it opened. */
+/* Q2 Podcast: an app's page opening, said in /tmp/q2-<id>.open ("<ms>\n", time_now_ms's), each time:
+ * Pocket syncs with Pocket Casts at each opening (q2-pocket's device). */
+static void page_opened(const app_t *a) {
+    char path[64], line[16];
+    int n = tk_snprintf(line, sizeof line, "%u\n", (unsigned)time_now_ms());
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.open", a->id);
+    if (n > 0 && n < (int)sizeof line) blob_io(path, "/tmp/q2-addon.open.tmp", line, (unsigned)n, 1);
+}
+
 static int page_at(int k, const char *op, const char *args, const char *title, int qr) {
     if (pg.page || !(pg.lv = calloc(ADDON_DEPTH, sizeof *pg.lv))) return 0;
     if (!(pg.f = calloc(4 + 6 * ADDON_ROWS * ADDON_PAGES, sizeof *pg.f)) ||
@@ -1880,6 +1889,7 @@ static int page_at(int k, const char *op, const char *args, const char *title, i
         return free(pg.lv), free(pg.f), pg.lv = 0, pg.f = 0, 0;
     pg.a = k;
     app_t *a = app();
+    page_opened(a);
     int missing = access(a->bin, 0);
     if (!missing && (!a->launched || access(a->pid, 0))) launch(a), pg.code = qr && a->qr;
     pg.depth = 1;

@@ -771,10 +771,9 @@ def playing_page(root, g=SET0):
               "NP_IPOD_* != Classic's Now Playing")
 
 
-# Display's Centred Now Playing (IPOD NPCENTRED) opens stock's own page, its art centred over the
-# title and artist, as PLAYING_STOCK (navigation.c ringnav_ui_load); the payload binds it by the same names.
-# It keeps stock's layout; the title and artist hold at their start as every scrolling label does, and the lyrics
-# span their column, as the iPod page's span the screen (patch/lyrics.c wraps at the rows' width).
+# Stock's own page, its art centred over the title and artist, as PLAYING_STOCK (navigation.c ringnav_ui_load),
+# made Q2 Podcast's Now Playing below; the payload binds it by the same names. The lyrics span the screen, as the
+# iPod page's (patch/lyrics.c wraps at the rows' width).
 PLAYING_STOCK = 'playing_page_stock.bin'
 def playing_stock(data):
     check(sha(data) == UI_ASSETS[PLAYING_PAGE], f'{PLAYING_PAGE}: unaudited UI asset')
@@ -793,29 +792,113 @@ def playing_stock(data):
           'self_layout' not in msg[2], 'Unexpected stock lyrics page')
     view['self_layout'] = 'default(x=0,y=0,w=100%,h=-20)'
     msg[2]['self_layout'] = 'default(x=0,y=73,w=100%,h=28)'
-    # Stock's art meets the status bar: it starts 8 px below it, 8 px smaller so its bottom stays
-    # put, with the play-state badge still centred on it.
     check(named['img_cover'][1] == [18, 0, 188, 188] and named['img_playstate'][1] == [52, 34, 120, 120],
           'Unexpected stock cover')
-    named['img_cover'][1] = [22, 8, 180, 180]
-    named['img_playstate'][1] = [52, 38, 120, 120]
-    # The play mode mirrors the heart: its box, flipped to the right edge, the icon centred in it, not
-    # drawn from the corner 12 px right of the box.
     fav, mode = named['img_fav'], named['img_playmode']
     check(fav[1] == [2, 129, 86, 73] and fav[2]['draw_type'] == 'center' and mode[2]['draw_type'] == 'default',
           'Unexpected stock heart or play mode')
-    mode[1] = [375 - fav[1][0] - fav[1][2], *fav[1][1:]]
-    mode[2]['draw_type'] = 'center'
-    for key in [k for k in mode[2] if k.endswith(('x_offset', 'y_offset'))]: del mode[2][key]
-    # The heart's ink sits high in its bitmap (weighted centre 11 px of 28, the play modes' 13-14), so
-    # it drops 3 px to sit level with the play mode by eye.
-    fav[1] = [fav[1][0], fav[1][1] + 3, *fav[1][2:]]
+    check([n[2].get('name') for n in root[3]] == [
+        'view_buttons', 'scrlabel_title', 'scrlabel_artist', 'label_playtime', 'label_playlen',
+        'slide_view_view', 'slider_play', 'img_repeata', 'img_repeatb', 'image_wait'] and
+        [n[2].get('name') for n in named['slide_view'][3]] == ['view_album', 'view_lyric', 'view_info'],
+        'Unexpected Now Playing page')
+    buttons, title, artist = root[3][:3]
+    # Q2 Podcast (fork-only): the one Now Playing page, every theme's (navigation.c np_layout). The top row is the
+    # iPod page's, "3 of 12" and More, Return the hardware's. Below it the slide_view spans the window down to the
+    # bar, so a swipe takes all of the first page: the art centred, the title and show under it, and three buttons
+    # down each side of the art (PC_SIDE), the star, 15 s back and the previous chapter left, AirPlay, 30 s on and
+    # the next chapter right (patch/podcast.c, airplay.c). The info page follows and then the lyrics page, which is
+    # an episode's transcript (podcast.c moves it in and out); podcast.c puts Description and Chapters after the art.
+    # Repeat has no button: its widget stays, hidden, for stock's code. The dots sit under the bar, between the times.
+    buttons[1] = [0, 0, 375, NP_TOP]
+    named['img_return'][1][0] = -200
+    more = named['img_more']
+    more[2] = {k: v for k, v in more[2].items() if not k.endswith(('_offset', 'text_align_h'))}
+    more[1] = [NP_ICONS_END - NP_ICON, 0, NP_ICON, NP_TOP]
+    buttons[3].append(['label', [NP_POS_X, 0, NP_ICONS_END - NP_ICON - NP_POS_X, NP_TOP], {
+        'name': 'label_ipod_pos', 'style:normal:font_size': '16', 'style:normal:text_color': NP_GREY,
+        'style:normal:text_align_h': 'left'}, []])
+    buttons[3].remove(fav)
+    mode[1] = [-200, 0, NP_ICON, NP_ICON]
+    mode[2]['visible'] = 'false'
+    art_x = (375 - PC_ART) // 2
+    named['img_cover'][1] = [art_x, 0, PC_ART, PC_ART]
+    named['img_playstate'][1] = [art_x + (PC_ART - 120) // 2, (PC_ART - 120) // 2, 120, 120]
+    fav[2] = {k: v for k, v in fav[2].items() if not k.endswith(('x_offset', 'y_offset'))}
+    side = []
+    for name, image, (x, y) in zip(PC_SIDE, PC_IMAGES, pc_frames()):
+        if name == 'img_fav':
+            fav[1] = [x, y, PC_BTN, PC_BTN]
+            side.append(fav)
+        else:
+            side.append(['image', [x, y, PC_BTN, PC_BTN], {'name': name, 'image': image, 'draw_type': 'center',
+                                                          'clickable': 'true'}, []])
+    title[1] = [NP_MARGIN, PC_ART + PC_TEXT_GAP, 375 - 2 * NP_MARGIN, PC_TITLE_H]
+    artist[1] = [NP_MARGIN, PC_ART + PC_TEXT_GAP + PC_TITLE_H, 375 - 2 * NP_MARGIN, PC_ARTIST_H]
+    named['view_album'][3] += [title, artist, *side]
+    root[3][1:3] = []
+    # The pages: the art, Description, Chapters, the info (its stock 225 px column centred on the screen), then the
+    # lyrics, which wait in a hidden view beside the slide_view (view_pc_shelf) until a track has some: podcast.c
+    # moves them in and out. Stock finds them all by name. Description is a wrapped label in a scroll_view, Chapters
+    # a scroll_view podcast.c fills with a row a chapter.
+    slide_h = PC_ART + PC_TEXT_GAP + PC_TITLE_H + PC_ARTIST_H
+    album_page, lyric_page, info_page = named['slide_view'][3]
+
+    def scroll_page(name, children):
+        fill = 'default(x=0,y=0,w=100%,h=100%)'
+        return ['view', [0, 0, 375, slide_h], {'name': name, 'self_layout': fill}, [
+            ['scroll_view', [0, 0, 375, slide_h], {'name': name + '_scroll', 'self_layout': fill, 'xslidable': 'false',
+                                                   'yslidable': 'true'}, children]]]
+    desc = scroll_page('view_pc_desc', [['label', [NP_MARGIN, 0, 375 - 2 * NP_MARGIN, slide_h], {
+        'name': 'label_pc_desc', 'style': 's_label_white20c', 'style:normal:font_size': '16', 'line_wrap': 'true',
+        'word_wrap': 'true'}, []]])
+    named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_chapters', []), info_page]
+    for n in named['view_info'][3]:
+        n[1][0] += (375 - 225) // 2
+    dots_y = PC_DOTS - PC_TOP
+    named['slide_view_view'][1] = [0, PC_TOP, 375, dots_y + 10]
+    named['slide_view'][1] = [0, 0, 375, slide_h]
+    named['slide_view_view'][3].append(['view', [0, 0, 375, slide_h], {'name': 'view_pc_shelf', 'visible': 'false'},
+                                        [lyric_page]])
+    dots = named['slide_indicator1']
+    check(dots[1][1] == PC_DOTS and dots[2]['self_layout'] == f'default(x=0,y={PC_DOTS},w=100%,h=10)', 'Unexpected stock dots')
+    for key in dots[2]:
+        if key.endswith(':selected_fg_color'): dots[2][key] = '#eeeeee'
+        elif key.endswith(':fg_color'): dots[2][key] = '#555555'
+    dots[1][1] = dots_y
+    dots[2]['self_layout'] = f'default(x=0,y={dots_y},w=100%,h=10)'
+    dots[2].update(anchor_x=f'{375 // 2}px', anchor_y='0px')  # as the iPod page's: the dots stay put in a swipe
+    named['image_wait'][1] = [art_x + (PC_ART - 54) // 2, PC_TOP + (PC_ART - 54) // 2, 54, 54]
     # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
     # images drew theirs: its 82 px box's middle, 6 px down.
     bar = named['slider_play']
     check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
     np_slider(bar, 50, 208 + 82 // 2 + 6, 290, NP_BAR[3])
+    check(PC_TOP + slide_h < 208 + 82 // 2 + 6 - NP_BAR[3], "the first page's text clear of the bar")
     return encode(root)
+
+
+# Q2 Podcast's Now Playing (playing_stock): the slide area's top in the window (the top row's NP_TOP, 2 px of it
+# shared), the art, the title's and show's rows under it, the side buttons' frames (each glyph centred in one),
+# the dots' row (stock's, between the times).
+PC_TOP = NP_TOP - 2
+PC_ART = 164
+PC_TEXT_GAP = 3
+PC_TITLE_H = 22
+PC_ARTIST_H = 18
+PC_BTN = 50
+PC_DOTS = 270
+# The side buttons, left column top to bottom, then the right: names (patch/podcast.c, airplay.c) and images.
+PC_SIDE = ('img_fav', 'img_pc_back', 'img_pc_chapprev', 'img_airplay', 'img_pc_fwd', 'img_pc_chapnext')
+PC_IMAGES = ('play_unfav', 'play_back15', 'play_chapprev', 'airplay', 'play_fwd30', 'play_chapnext')
+
+
+def pc_frames():
+    """The side buttons' frames' x, y on the first page, in PC_SIDE's order: each column centred beside the art,
+    its three frames from the art's top to its foot."""
+    art_x = (375 - PC_ART) // 2
+    left = (art_x - PC_BTN) // 2
+    return [(x, (PC_ART - PC_BTN) * row // 2) for x in (left, 375 - left - PC_BTN) for row in range(3)]
 
 
 # The full-screen art (a tap on Now Playing's opens it, any tap closes it): stock's art, shade and
@@ -1077,8 +1160,16 @@ def slider_plain(path, root):
         n[1][2:] = [0, 0]
 
 
+# Q2 Podcast (fork-only): My Fav's heart is a star, Pocket Casts' (assets/icons: the hearts' 28 px, their ink and
+# baseline), filled when on; and Now Playing's buttons beside the art, drawn as it is (tools/ipod.py PC_SIDE).
+STAR_ICONS = {'play_fav.png': 'play_star.png', 'play_unfav.png': 'play_unstar.png'}
+PC_ICONS = ('play_back15.png', 'play_fwd30.png', 'play_chapprev.png', 'play_chapnext.png')
+
+
 def quiet_icon(name, data):
     check(sha(data) == QUIET_ICONS.get(name), f'{name}: unaudited control icon')
+    if name in STAR_ICONS:
+        return (ROOT/'assets/icons'/STAR_ICONS[name]).read_bytes()
     return imagemagick('png:-', '-trim', '+repage', '-filter', 'Lanczos', '-resize', '24x24',
                       '-channel', 'RGB', '-fill', '#aaaaaa' if name == 'play_moredown.png' else '#eeeeee',
                       '-colorize', '100', '+channel', '-gravity', 'center', '-background', 'none',
