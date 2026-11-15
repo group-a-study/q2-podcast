@@ -1351,6 +1351,22 @@ int playback_play_now(void *r) {
     return 1;
 }
 
+/* A Queue row's Move to Bottom (podcast.c's ⋯ menu): the queue's row from, after the playing one,
+ * goes to the queue's end, Up Next's last, the rows after it one place up. Only without advanced
+ * play, whose queue plays in its order; 0 when nothing can move (the last already is 1). */
+int playback_sink(unsigned from) {
+    void *q = queue();
+    unsigned pos = (unsigned)M(MCL_POS), n = q ? deque_size(q) : 0;
+    if (s.active || !local_queue() || from <= pos || from >= n) return 0;
+    if (from + 1 == n) return 1;
+    close_preload();
+    reverse_rows(q, from, n);
+    reverse_rows(q, from, n - 1);
+    s.dirty = 1;
+    playback_save();
+    return 1;
+}
+
 /* The queue's row whose file is path (not the playing one), or -1. */
 int playback_find(const char *path) {
     void *q = queue();

@@ -887,12 +887,11 @@ def playing_stock(data):
     named['image_wait'][1] = [art_x + (PC_ART - 54) // 2, PC_TOP + (PC_ART - 54) // 2, 54, 54]
     named['image_wait'][2]['sensitive'] = 'false'  # hidden but over the art: taps go to the art
     # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
-    # images drew theirs: its 82 px box's middle, 6 px down; and as long as the iPod page's (the user's, 2026-11-15),
-    # the times under its ends as there, the dots between them.
+    # images drew theirs: its 82 px box's middle, 6 px down, on the iPod page's line; it spans the times under it, from
+    # the elapsed time's first digit to the length's last (PC_BAR_X, PC_BAR_W), the dots between them.
     bar = named['slider_play']
     check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
-    check([PC_BAR_X, PC_BAR_W, 208 + 82 // 2 + 6] == [NP_BAR[0], NP_BAR[2], NP_BAR[1] + NP_BAR[3] // 2],
-          "Q2 Podcast's bar != the iPod page's")
+    check(208 + 82 // 2 + 6 == NP_BAR[1] + NP_BAR[3] // 2, "Q2 Podcast's bar off the iPod page's line")
     np_slider(bar, PC_BAR_X, 208 + 82 // 2 + 6, PC_BAR_W, NP_BAR[3])
     for name in ('img_repeata', 'img_repeatb'):
         named[name][1][0] = PC_BAR_X
@@ -915,7 +914,10 @@ PC_TITLE_H = 22
 PC_ARTIST_H = 18
 PC_BTN = 50
 PC_DOTS = 270
-PC_BAR_X, PC_BAR_W = NP_BAR[0], NP_BAR[2]  # the progress bar, the iPod page's; the title and show span it
+# The progress bar from the elapsed time's first digit to the length's last (the user's, 2026-11-15, 1.8.4: shorter
+# than the iPod page's): the times' labels' outer edges, the left one's text left-aligned, the right one's right-aligned.
+# The title and the show span it.
+PC_BAR_X, PC_BAR_W = NP_TIME_X, 375 - 2 * NP_TIME_X
 PC_DESC_TOP = 12  # Description's first line under the top row (the user's, 2026-11-15: not so high)
 # The side buttons, left column top to bottom, then the right: names (patch/podcast.c, airplay.c) and images.
 PC_SIDE = ('img_fav', 'img_pc_back', 'img_pc_chapprev', 'img_airplay', 'img_pc_fwd', 'img_pc_chapnext')

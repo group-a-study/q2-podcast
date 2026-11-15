@@ -8,7 +8,7 @@ from typing import TypeVar
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ZIP_SHA = '154c17822d09be001be35c03d2d3488424dee195221790bd70864480d55b0f00'
 DEMO_SHA = '2c5f06142850b4fc168f82b44a81550cce0a5b4b9fe1c179dced4a08a3049138'
-VERSION = '1.8.3'  # major.minor.patch, single digits, shown as is (About and release tag)
+VERSION = '1.8.4'  # major.minor.patch, single digits, shown as is (About and release tag)
 REPO = 'group-a-study/q2-podcast'  # whose releases Network Update fetches (--update-repo) and release.py publishes
 # The updater's identity (firmware_v20.info and demo's version literal) must be 5 characters and
 # differ from the installed one, so it packs the digits: 1.0.1 is V101I. About shows the stock
@@ -581,7 +581,12 @@ LABELS = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
     ('genre', 'Genres', 'Genre'), ('player_era', 'Era', 'Year'), ('batch_addplaylist', 'Add to playlist', 'Add to Playlist'),
     ('msg_importplaylist', 'Import Playlist?', 'Import Playlists?'),  # it imports the whole folder
     ('scan_startscan', 'Scanning', 'Scan'),  # Scan specified folders' button; wifi_scan keeps its "Scanning"
-    ('scan_updatefinish', 'Library Updated,%d Updated', 'Library Updated, %d Updated')))  # the space after the comma
+    ('scan_updatefinish', 'Library Updated,%d Updated', 'Library Updated, %d Updated'),  # the space after the comma
+    # Q2 Podcast (the user's, 2026-11-15): the scan reads the card's audio, episodes and books, not music
+    ('msg_actionscan', 'Scan music?', 'Scan the SD Card?')))
+# Labels stock's English lists more than once, each time with the same text: every one replaced (relabel).
+LABELS_EVERY = tuple((k.encode(), o.encode(), n.encode()) for k, o, n in (
+    ('scan_now', 'Scan music now', 'Scan SD Card Now'),))  # Q2 Podcast's, as msg_actionscan
 
 # Wi-Fi transfer's web page (stock thttpd on :8888): in English, an Upload Folder button, and a folder,
 # picked or dropped, keeps its tree: each file's folders are made with stock's create (a plain mkdir) before
@@ -894,15 +899,29 @@ def classic_light_font():
 
 def relabel(data):
     """A strings/*.bin value replaced: after a u16 0 and a u16 pair count, a u32 offset to each key and
-    value, in file order; the offsets past each change move with it."""
-    for key, old, new in LABELS:
-        at = data.find(b'\0' + key + b'\0' + old + b'\0')
-        check(at > 0 and data.count(b'\0' + key + b'\0') == 1, f'Unexpected {key.decode()} label')
-        at += len(key) + 2
+    value, in file order; the offsets past each change move with it. A LABELS key is there once, a
+    LABELS_EVERY key at least once, each time with its stock text."""
+    def one(data, key, old, new):
+        at = data.find(b'\0' + key + b'\0' + old + b'\0') + len(key) + 2
         n = 2 * struct.unpack_from('<H', data, 2)[0]
         offsets = [o + len(new) - len(old) if o > at else o for o in struct.unpack_from(f'<{n}I', data, 4)]
         data = bytearray(data[:at] + new + data[at + len(old):])
         struct.pack_into(f'<{n}I', data, 4, *offsets)
+        return bytes(data)
+    for key, old, new in LABELS:
+        at = data.find(b'\0' + key + b'\0' + old + b'\0')
+        check(at > 0 and data.count(b'\0' + key + b'\0') == 1, f'Unexpected {key.decode()} label')
+        data = one(data, key, old, new)
+    def count(data, s):  # overlapping too: stock's two scan_now pairs share the NUL between them
+        n, at = 0, data.find(s)
+        while at >= 0:
+            n, at = n + 1, data.find(s, at + 1)
+        return n
+    for key, old, new in LABELS_EVERY:
+        hits = count(data, b'\0' + key + b'\0')
+        check(hits and count(data, b'\0' + key + b'\0' + old + b'\0') == hits, f'Unexpected {key.decode()} label')
+        for _ in range(hits):
+            data = one(data, key, old, new)
     return bytes(data)
 
 # demo's .pdr section (offset, size): MIPS procedure descriptors past every LOAD segment, which nothing
@@ -1443,7 +1462,7 @@ CONTEXT_DATA = {'bt_showcoding': 4, 'g_memory_info': 3476, 'g_folder_path': 1024
                 'bt_connectstatus': 4,  # a link thread runs (1), ended (2), checked (3)
                 'bt_initstatus': 4}  # Bluetooth's start-up status: -102 is stock's "Bluetooth abnormal" (system.c reboot_record)
 # Windows the payload creates at runtime (window_create), so no rootfs asset names them.
-PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
+PAYLOAD_WINDOWS = {'playlistedit_page', 'chapters_page', 'coverflow_page', 'photos_page', 'books_page', 'games_page', 'mostplayed_page', 'shuffle_page', 'upnext_page', 'pcqueue_menu', 'ratings_page', 'era_page', 'era_albums_page', 'rated_page', 'longsongs_page', 'spotify_page',
                    'spotbrowse_page', 'radio_page', 'radionp_page', 'streamconf_page', 'tidal_downloads', 'apps_page',
                    'addon_page', 'app_songs', 'qrcode_page'}
 ICONS = [f'menu_{c}{s}.png' for c in ('coverflow', 'rockbox') for s in ('', 'down')]

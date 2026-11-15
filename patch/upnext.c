@@ -1,6 +1,6 @@
 /* View Queue (docs/internals.md#queue-menu), Q2 Podcast's (the user's, 2026-11-15): the playing
  * episode, then Up Next in the order it plays, each with its show's art, its title over its show,
- * and arrows that move it (podcast.c podcast_row, the rows of Now Playing's Queue page); the wheel
+ * and a ⋯ for its menu (podcast.c podcast_row, the rows of Now Playing's Queue page); the wheel
  * goes a row at a time, as every list. navigation.c's qm_run (the Play/Pause hold's View Queue) and
  * Now Playing's ⋯ page (podcast.c more_queue) open it (up_next), and ringnav_keylong hands a
  * Play/Pause hold on a row to un_hold. */
@@ -12,8 +12,9 @@
 #define UP_NEXT_ROWS 100                                   /* Up Next's snapshot cap */
 #define SEL "_ringnav_index"                               /* navigation.c's */
 unsigned queue_hash(void *q);                              /* navigation.c */
-void *podcast_row(void *view, int y, int w, int h, void *r, int lead, int up, int down);
-int podcast_row_arrow(void *item, void *event);            /* podcast.c */
+void *podcast_row(void *view, int y, int w, int h, void *r, int lead);
+int podcast_row_more(void *item, void *event);             /* podcast.c */
+void podcast_row_menu(unsigned at);                        /* podcast.c */
 int media_owner(void);                                     /* headset.c */
 static struct {
     void *page;                 /* the page, one at a time */
@@ -44,11 +45,10 @@ static void un_fill(int sel) {
     un.hash = q ? queue_hash(q) : 0;
     int rows = (int)(un.n + un.lead), h = page_h(64);
     void *view = un.view = page_list_or(un.page, un.page, "Queue", "Nothing playing", rows, 64);
-    if (lead) widget_on(podcast_row(view, 0, 375, h, lead, 0, 0, 0), EVT_CLICK, un_play, (void *)0);
+    if (lead) widget_on(podcast_row(view, 0, 375, h, lead, 0), EVT_CLICK, un_play, (void *)0);
     for (unsigned i = 0; i < un.n; i++) {
         unsigned row = i + un.lead;
-        widget_on(podcast_row(view, (int)row * h, 375, h, deque_at(q, un.idx[i]), (int)i + 1, i > 0,
-                              i + 1 < un.n),
+        widget_on(podcast_row(view, (int)row * h, 375, h, deque_at(q, un.idx[i]), (int)i + 1),
                   EVT_CLICK, un_play, (void *)(long)row);
     }
     if (sel >= 0 && rows) ringnav_select(view, sel < rows ? sel : rows - 1, rows);
@@ -60,9 +60,9 @@ static int un_again(const void *unused) {
     return 0;
 }
 
-/* A row's tap or Centre (ctx: the row). An arrow moves its episode (playback_raise: up swaps it with
- * the one before, down with the one after), the selection going with it; the playing row goes back
- * to Now Playing; another row plays its episode and the one playing goes first in Up Next
+/* A row's tap or Centre (ctx: the row). Its ⋯ opens its menu (podcast.c podcast_row_menu: moves,
+ * Delete When Finished, Delete Episode, Remove from Queue); the playing row goes back to Now
+ * Playing; another row plays its episode and the one playing goes first in Up Next
  * (playback_play_swap), as Now Playing's Queue page does, and Now Playing comes in. A queue changed
  * under the page takes the rows again and says so. */
 static int un_play(void *ctx, void *event) {
@@ -78,15 +78,9 @@ static int un_play(void *ctx, void *event) {
         if (timer_add(un_again, (void *)0, 0)) toast("Queue changed");
         return 0;
     }
-    int arrow = event ? podcast_row_arrow(P(event, EVENT_TARGET), event) : 0;
-    if (arrow) {
-        if (playback_raise(arrow < 0 ? k : k + 1))
-            un.sel = (int)row + arrow;
-        else {
-            un.sel = (int)row;
-            toast("This queue can't be reordered");
-        }
-        timer_add(un_again, (void *)0, 0);
+    if (event && podcast_row_more(P(event, EVENT_TARGET), event)) { /* its ⋯: its menu */
+        un.sel = (int)row;
+        podcast_row_menu(un.idx[k]);
         return 0;
     }
     int at = playback_play_swap(un.idx[k]);

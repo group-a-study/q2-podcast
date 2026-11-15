@@ -554,7 +554,10 @@ def test_playing_stock(audited):
     assert {'scrlabel_title', 'scrlabel_artist'} <= set(album) and n['slide_view_view'][1][1] == ipod.PC_TOP
     assert ipod.PC_TOP + n['slide_indicator1'][1][1] == ipod.PC_DOTS
     assert [c[1][0] for c in n['view_info'][3]] == [75] * 4
-    assert n['slider_play'][1] == [ipod.NP_BAR[0], 208 + 41 + 6 - ipod.NP_TOUCH // 2, ipod.NP_BAR[2], ipod.NP_TOUCH]
+    # the bar from the elapsed time's first digit to the length's last (the user's, 2026-11-15)
+    assert n['slider_play'][1] == [ipod.NP_TIME_X, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 375 - 2 * ipod.NP_TIME_X, ipod.NP_TOUCH]
+    assert n['label_playtime'][1][0] == n['slider_play'][1][0]
+    assert sum(n['label_playlen'][1][0:3:2]) == sum(n['slider_play'][1][0:3:2])
     assert [n[t][1] for t in ('label_playtime', 'label_playlen')] == [[ipod.NP_TIME_X, ipod.NP_TIMES_Y, 80, 16],
                                                                      [375 - ipod.NP_TIME_X - 80, ipod.NP_TIMES_Y, 80, 16]]
     # the columns' glyphs: the left's ink centred on Return's chevron, the right's on More's dots (twice the centres,

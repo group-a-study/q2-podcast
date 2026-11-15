@@ -489,9 +489,9 @@ def validate_assets(directory):
     assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric', 'view_pc_chapters', 'view_pc_transcript']
     assert named['view_pc_shelf']['visible'] == 'false' and nodes['label_pc_desc'][1][1] == PC_DESC_TOP
     assert min(c[1][1] for c in nodes['view_info'][3]) == PC_DESC_TOP  # the info's first row as Description's
-    # the bar as long as the iPod page's, the times under its ends as there (the user's, 2026-11-15)
+    # the bar from the elapsed time's first digit to the length's last, the times' outer edges (the user's, 2026-11-15)
     bar = nodes['slider_play'][1]
-    assert [bar[0], bar[2]] == [NP_BAR[0], NP_BAR[2]] and bar[1] + bar[3] // 2 == NP_BAR[1] + NP_BAR[3] // 2
+    assert [bar[0], bar[0] + bar[2]] == [NP_TIME_X, 375 - NP_TIME_X] and bar[1] + bar[3] // 2 == NP_BAR[1] + NP_BAR[3] // 2
     assert nodes['label_playtime'][1][:2] == [NP_TIME_X, NP_TIMES_Y] and nodes['label_playlen'][1][:2] == [375 - NP_TIME_X - 80, NP_TIMES_Y]
     # the side columns' glyphs on Return's chevron and More's dots, PC_GAP between each glyph's ink and the next's
     # down from Return's, the right's rows level with the left's: measured on the images the build ships, each drawn

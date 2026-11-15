@@ -21,6 +21,7 @@
 { "playlistedit_page", CTX_DYNAMIC, 0 },
 { "chapters_page", CTX_DYNAMIC, 0 }, /* runtime chapter list */
 { "upnext_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/navigation.c) */
+{ "pcqueue_menu", CTX_DYNAMIC, 0 },  /* runtime window (patch/podcast.c: a Queue row's menu) */
 { "ratings_page", CTX_DYNAMIC, 0 },   /* runtime window (patch/ratings.c) */
 { "era_page", CTX_DYNAMIC, 0 },       /* runtime window (patch/library_lists.c) */
 { "era_albums_page", CTX_DYNAMIC, 0 }, /* runtime window (patch/library_lists.c) */

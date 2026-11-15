@@ -36,7 +36,7 @@
 #define Q_ROW_H 56
 #define Q_ART 44
 #define Q_TEXT_X (PAGE_X + Q_ART + 10)
-#define ARROW_W 40
+#define MORE_W 48 /* a row's ⋯ (play_more), at its end */
 #define POLL_MS 500
 #define DESC_TOP 12       /* tools/ipod.py PC_DESC_TOP: Description's and Transcript's first line */
 #define TEXT_ROW_PX 20    /* a wheel tick's worth on Description and Transcript (the lyrics' row) */
@@ -633,7 +633,8 @@ static const char *ep_show(void *r, char *buf, unsigned size) {
  * (coverflow_folder_art, made on its own thread for a show Cover Flow hasn't drawn: the page is
  * built again once a run of them ends, podcast_poll), else stock's disc. */
 extern const char *coverflow_art_url(const char *artist, const char *album, char *out);
-void up_next_again(void); /* upnext.c */
+void up_next_again(void);     /* upnext.c */
+unsigned queue_hash(void *q); /* navigation.c */
 static const char *ep_art(void *r, char *out) {
     ep_t *e = ep_of(r);
     const char *url = e && e->show ? coverflow_art_url(e->album_artist, e->show, out) : 0;
@@ -785,16 +786,26 @@ static void *queue_row_of(const char *path) {
     return found;
 }
 
-/* An episode played to its end (finish_poll): noted for q2-pocket, and gone when Delete When
- * Finished was set on it. The one still at the queue's position (the queue ended on it) keeps its
- * row, stopped there; its file and library row go. */
+/* An episode played to its end (finish_poll): noted for q2-pocket, out of the queue (the user's,
+ * 2026-11-15: it went to Up Next's end, under Repeat All, where it should be gone), and gone from
+ * the card when Delete When Finished was set on it. The one still at the queue's position (the
+ * queue ended on it) keeps its row, stopped there; its file and library row go. A book's chapter
+ * stays: only a podcast's episode leaves. */
 static void finished(const char *path) {
     char own[600];
     if (tk_snprintf(own, sizeof own, "%s", path) >= (int)sizeof own) return;
     done_note('F', own);
     unsigned key = path_key(own);
     int i = delfin_at(key);
-    if (i < 0) return;
+    if (i < 0) { /* kept: out of the queue (file_gone takes a deleted one's rows) */
+        void *q = P(mcl_pdeqplaylist, 0);
+        for (unsigned k = q && !strncasecmp(own, PODCASTS, sizeof PODCASTS - 1) ? deque_size(q) : 0;
+             k-- > 0;) {
+            const char *p = P(deque_at(q, k), REC_PATH);
+            if (p && !strcmp(p, own)) playback_drop(k); /* never the playing row */
+        }
+        return;
+    }
     for (; i < DELFIN_N - 1; ++i) delfin[i] = delfin[i + 1];
     delfin[DELFIN_N - 1] = 0;
     BLOB_IO(DELFIN_FILE, delfin, 1);
@@ -1290,15 +1301,15 @@ static void transcript_poll(void *r, void *front, unsigned now) {
 
 /* An episode's row (the user's, 2026-11-15, as Library's Episodes): the show's art, the title over
  * the show, h high and w wide at y in view; the playing one (lead 0) says so, and an Up Next row
- * has its arrows at its end, up unless it is first, down unless last. The arrows are drawn in the
- * row, not widgets of their own (a list's wheel would stop on them): a tap on them is told by where
- * it lands (podcast_row_arrow). Shared with upnext.c's View Queue. */
-void *podcast_row(void *view, int y, int w, int h, void *r, int lead, int up, int down) {
+ * has a ⋯ at its end (1.8.4, where its arrows were), which opens its menu (podcast_row_menu). The ⋯
+ * is drawn in the row, not a widget of its own (a list's wheel would stop on it): a tap on it is
+ * told by where it lands (podcast_row_more). Shared with upnext.c's View Queue. */
+void *podcast_row(void *view, int y, int w, int h, void *r, int lead) {
     char title[256], show[160], line[200], url[600];
     void *item = list_item_create(view, 0, y, w, h);
     widget_use_style(item, "s_listitem_black");
     int art = h - 12 < Q_ART ? h - 12 : Q_ART, text_x = PAGE_X + art + 10,
-        text_w = w - text_x - (lead ? 2 * ARROW_W : PAGE_X), top = (h - 44) / 2;
+        text_w = w - text_x - (lead ? MORE_W : PAGE_X), top = (h - 44) / 2;
     void *a = image_create(item, PAGE_X, (h - art) / 2, art, art);
     image_set_draw_type(a, 4); /* scale_auto, as the stock cover rows */
     image_base_set_image(a, ep_art(r, url));
@@ -1308,22 +1319,131 @@ void *podcast_row(void *view, int y, int w, int h, void *r, int lead, int up, in
     if (!lead) tk_snprintf(line, sizeof line, *s ? "Now Playing · %s" : "Now Playing", s), s = line;
     widget_set_text_utf8(label(item, text_x, top + 24, text_w, 20, "s_scrlabel_white20l", 15, GREY),
                          s);
-    for (int k = 0; lead && k < 2; ++k) {
-        if (k ? !down : !up) continue;
-        void *arrow = image_create(item, w - (2 - k) * ARROW_W, 0, ARROW_W, h);
-        image_base_set_image(arrow, k ? "play_qdown" : "play_qup");
-        image_set_draw_type(arrow, IMAGE_DRAW_CENTER);
+    if (lead) {
+        void *more = image_create(item, w - MORE_W, 0, MORE_W, h);
+        image_base_set_image(more, "play_more");
+        image_set_draw_type(more, IMAGE_DRAW_CENTER);
     }
     return item;
 }
 
-/* A tap on row item (EVT_CLICK): -1 on its up arrow, 1 on its down arrow, else 0 (a Centre press's
- * click lands on the row's start). */
-int podcast_row_arrow(void *item, void *event) {
+/* Whether a tap on row item (EVT_CLICK) lands on its ⋯ (a Centre press's click lands on the row's
+ * start). */
+int podcast_row_more(void *item, void *event) {
     if (!item || !event) return 0;
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) }, w = I(item, W_W);
     widget_to_local(item, xy);
-    return xy[0] < w - 2 * ARROW_W || xy[0] >= w ? 0 : xy[0] < w - ARROW_W ? -1 : 1;
+    return xy[0] >= w - MORE_W && xy[0] < w;
+}
+
+/* ---- A Queue row's menu (the user's, 2026-11-15: a ⋯ instead of the arrows) ---- */
+
+enum { QR_UP, QR_DOWN, QR_TOP, QR_BOTTOM, QR_DELFIN, QR_DELETE, QR_REMOVE, QR_N };
+static struct {
+    void *page;
+    unsigned at;   /* its episode's queue row as it opened */
+    unsigned hash; /* and the queue's queue_hash then: a queue changed since is told */
+    int what;      /* the row picked, run once the menu has gone (qr_run) */
+} qr;
+
+static int qr_closed(void *ctx, void *event) {
+    if (ctx == qr.page) qr.page = 0;
+    return 0;
+}
+
+/* The menu's episode's queue row now, or -1 (the queue changed, or it plays now). */
+static int qr_row(void) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    return q && qr.at < deque_size(q) && queue_hash(q) == qr.hash && qr.at != (unsigned)MCL(MCL_POS)
+               ? (int)qr.at
+               : -1;
+}
+
+/* A queue row's place in Up Next (as playback_queue_rows lists it) and Up Next's length. */
+static int qr_place(unsigned at, unsigned *n) {
+    unsigned idx[QUEUE_ROWS];
+    *n = playback_queue_rows(idx, QUEUE_ROWS);
+    for (unsigned k = 0; k < *n; ++k)
+        if (idx[k] == at) return (int)k;
+    return -1;
+}
+
+/* The pick, off the menu's own dispatch (the menu gone): moves go through playback.c, Delete When
+ * Finished turns over, Delete Episode asks first (podcast_delete), Remove from Queue takes the row
+ * out (playback_drop); then both Queue pages are built again. */
+static int qr_run(const void *unused) {
+    (void)unused;
+    unsigned n = 0;
+    int at = qr_row(), k = at >= 0 ? qr_place((unsigned)at, &n) : -1;
+    void *q = P(mcl_pdeqplaylist, 0), *r = k >= 0 ? deque_at(q, (unsigned)at) : 0;
+    const char *say = 0;
+    if (!r)
+        say = "Queue changed";
+    else
+        switch (qr.what) {
+        case QR_UP:
+            say = !k                            ? "It's next already"
+                  : playback_raise((unsigned)k) ? 0
+                                                : "This queue can't be reordered";
+            break;
+        case QR_DOWN:
+            say = k + 1u >= n                       ? "It's last already"
+                  : playback_raise((unsigned)k + 1) ? 0
+                                                    : "This queue can't be reordered";
+            break;
+        case QR_TOP:
+            say = !k                                 ? "It's next already"
+                  : playback_move((unsigned)at) >= 0 ? 0
+                                                     : "This queue can't be reordered";
+            break;
+        case QR_BOTTOM:
+            say = k + 1u >= n                   ? "It's last already"
+                  : playback_sink((unsigned)at) ? 0
+                                                : "This queue can't be reordered";
+            break;
+        case QR_DELFIN: {
+            int on = !podcast_delfin(r);
+            podcast_delfin_set(r, on);
+            say = on ? "Delete When Finished: On" : "Delete When Finished: Off";
+            break;
+        }
+        case QR_DELETE:
+            podcast_delete(r);
+            break;
+        case QR_REMOVE:
+            say = playback_drop((unsigned)at) ? "Removed from the queue" : "Couldn't remove it";
+            break;
+        }
+    pc.q_sig = 0;
+    up_next_again();
+    if (say) toast(say);
+    return 0;
+}
+
+static int qr_pick(void *ctx, void *event) {
+    qr.what = (int)(long)ctx;
+    navigator_back();
+    timer_add(qr_run, 0, 0);
+    return 0; /* a STOP would keep the list's grab */
+}
+
+/* A Queue row's ⋯ (Now Playing's Queue page, View Queue): the menu of the queue's row at, titled
+ * with its episode's title. */
+void podcast_row_menu(unsigned at) {
+    void *q = P(mcl_pdeqplaylist, 0), *r = q && at < deque_size(q) ? deque_at(q, at) : 0;
+    char title[256];
+    if (!r || qr.page || !(qr.page = page_open("pcqueue_menu", qr_closed, page_keyup))) return;
+    qr.at = at, qr.hash = queue_hash(q);
+    void *view = page_list(qr.page, qr.page, 0, ep_title(r, title, sizeof title), QR_N, 48);
+    static const char *const rows[QR_N] = { "Move Up",          "Move Down", "Move to Top",
+                                            "Move to Bottom",   0,           "Delete Episode",
+                                            "Remove from Queue" };
+    for (int i = 0; i < QR_N; ++i)
+        page_row_detail(view, i,
+                        rows[i]             ? rows[i]
+                        : podcast_delfin(r) ? "Delete When Finished: On"
+                                            : "Delete When Finished: Off",
+                        0, qr_pick);
 }
 
 /* A list's pick of a podcast episode (ringnav_player_start: a press in Library, Folder, an album
@@ -1357,23 +1477,21 @@ static void *queue_lead(void) {
     return queue_now(&at, &n);
 }
 
-/* The Queue page's tap on a row (ctx: its place, 0 the playing one): an arrow moves it
- * (playback_raise: up swaps it with the row before, down with the row after); elsewhere on an Up
- * Next row that episode plays and the one playing goes first in Up Next (playback_play_swap), as
- * Pocket Casts' Up Next does; on the playing one, back to the art. */
+/* The Queue page's tap on a row (ctx: its place, 0 the playing one): its ⋯ opens its menu
+ * (podcast_row_menu); elsewhere on an Up Next row that episode plays and the one playing goes first
+ * in Up Next (playback_play_swap), as Pocket Casts' Up Next does; on the playing one, back to the
+ * art. */
 static int queue_tap(void *ctx, void *event) {
-    int k = (int)(long)ctx,
-        arrow = k && event ? podcast_row_arrow(P(event, EVENT_TARGET), event) : 0;
+    int k = (int)(long)ctx, more = k && event ? podcast_row_more(P(event, EVENT_TARGET), event) : 0;
     void *q = P(mcl_pdeqplaylist, 0);
     if (!k) {
         if (pc.slide) widget_set_prop_int(pc.slide, "value", 0);
         return 0;
     }
     if (k < 0 || (unsigned)k > pc.q_n || !q) return 0;
-    if (arrow) {
-        if (!playback_raise(arrow < 0 ? (unsigned)k - 1 : (unsigned)k))
-            toast("This queue can't be reordered");
-    } else {
+    if (more)
+        podcast_row_menu(pc.q_idx[k - 1]);
+    else {
         int at = playback_play_swap(pc.q_idx[k - 1]);
         if (at < 0 && pc.q_idx[k - 1] != (unsigned)MCL(MCL_POS) && pc.q_idx[k - 1] < deque_size(q))
             at = (int)pc.q_idx[k - 1]; /* a queue not ours to reorder: stock's pick */
@@ -1409,7 +1527,7 @@ static void queue_show(unsigned now) {
     if (gl.view == view) gl.on = 0;
     ep_batch(1);
     if (lead) {
-        widget_on(podcast_row(view, 0, w, Q_ROW_H, lead, 0, 0, 0), EVT_CLICK, queue_tap, (void *)0);
+        widget_on(podcast_row(view, 0, w, Q_ROW_H, lead, 0), EVT_CLICK, queue_tap, (void *)0);
         y = Q_ROW_H;
     }
     for (unsigned i = 0; i < n; ++i) {
@@ -1417,8 +1535,8 @@ static void queue_show(unsigned now) {
         if (!r) continue;
         ep_t *e = ep_of(r);
         missing |= !e || !e->title;
-        widget_on(podcast_row(view, y, w, Q_ROW_H, r, (int)i + 1, i > 0, i + 1 < n), EVT_CLICK,
-                  queue_tap, (void *)(long)(i + 1));
+        widget_on(podcast_row(view, y, w, Q_ROW_H, r, (int)i + 1), EVT_CLICK, queue_tap,
+                  (void *)(long)(i + 1));
         y += Q_ROW_H;
     }
     ep_batch(0);
@@ -1629,6 +1747,17 @@ static int more_delfin(void *ctx, void *event) {
     return 0;
 }
 
+/* A stock row's label (its button's first text), or 0. */
+static void *row_label(void *row) {
+    void *button = widget_count_children(row) ? widget_get_child(row, 0) : 0;
+    for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {
+        void *c = widget_get_child(button, j);
+        const char *type = widget_get_type(c);
+        if (!tk_strcmp(type, "hscroll_label") || !tk_strcmp(type, "label")) return c;
+    }
+    return 0;
+}
+
 /* A stock row's icon (its button's first image), else fallback. */
 static const char *row_icon(void *row, const char *fallback) {
     void *button = widget_count_children(row) ? widget_get_child(row, 0) : 0;
@@ -1643,18 +1772,25 @@ static const char *row_icon(void *row, const char *fallback) {
 
 /* Now Playing's ⋯ page (onlinematch.c ringnav_playermore), Q2 Podcast's (the user's, 2026-11-12 and
  * 2026-11-15): stock's Download Cover & Lyrics and Look up Artist go, Look up Album is Look up
- * Podcast (an episode's album is its show), Queue opens View Queue's episodes (more_queue), and
- * the skip lengths and Delete When Finished follow. view holds stock's PLAYMORE_COUNT rows, by
- * position (PLAYMORE_ROWS gives each its kind); stock's click reads a row's kind from its button's
- * name, so the rows left keep theirs, and ours are unnamed. */
+ * Podcast (an episode's album is its show), Queue opens View Queue's episodes (more_queue), the
+ * skip lengths follow; on an episode or a book, stock's Delete Song says Delete Episode, and Delete
+ * When Finished comes right after it (1.8.4: at the page's end it was out of sight). view holds
+ * stock's PLAYMORE_COUNT rows, by position (PLAYMORE_ROWS gives each its kind); stock's click reads
+ * a row's kind from its button's name, so the rows left keep theirs, and ours are unnamed. */
 void podcast_more(void *view) {
-    void *gone[PLAYMORE_COUNT];
+    void *gone[PLAYMORE_COUNT], *del = 0, *r = queue_lead();
     unsigned n = 0;
     char icon[32] = "";
-    int queue_at = -1;
+    int queue_at = -1, voice = r && spoken(P(r, REC_PATH));
     for (unsigned i = 0; i < PLAYMORE_COUNT && i < widget_count_children(view); ++i) {
         int kind = ((const int *)PLAYMORE_ROWS)[i];
-        void *row = widget_get_child(view, i);
+        void *row = widget_get_child(view, i), *label = row_label(row);
+        char text[40] = "";
+        if (label) widget_get_text_utf8(label, text, sizeof text);
+        if (!strcasecmp(text, "Delete Song")) {
+            del = row;
+            if (voice) widget_set_text_utf8(label, "Delete Episode");
+        }
         if (kind == PLAYMORE_SEARCH || kind == PLAYMORE_ARTIST)
             gone[n++] = row;
         else if (kind == PLAYMORE_ALBUM)
@@ -1677,12 +1813,16 @@ void podcast_more(void *view) {
     }
     for (unsigned i = 0; i < n; ++i) widget_destroy(gone[i]);
     skip_rows(view);
-    void *r = queue_lead();
-    if (r && spoken(P(r, REC_PATH))) {
+    if (voice) {
         void *label = list_row(view, "player_delete", 0, 0);
         widget_on(P(label, W_PARENT), EVT_CLICK, more_delfin, label);
         widget_use_style(label, "s_scrlabel_white20l");
         list_toggle(label, "Delete When Finished", podcast_delfin(r));
+        for (unsigned i = 0, n = del ? widget_count_children(view) : 0; i < n; ++i)
+            if (widget_get_child(view, i) == del) { /* right after Delete Episode */
+                widget_restack(P(P(label, W_PARENT), W_PARENT), i + 1);
+                break;
+            }
     }
 }
 

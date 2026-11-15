@@ -915,6 +915,36 @@ def test_a_list_pick_of_an_episode_plays_it_and_the_playing_one_goes_next(fw, pl
     assert find(paths[0]) == 0 and find(b'/nowhere.mp3') == -1 and find(path_at(player, player.mcl.pos)) == -1
 
 
+def test_sink_takes_a_row_to_the_queue_s_end(fw, player):
+    """A Queue row's Move to Bottom (podcast.c's ⋯ menu, the user's, 2026-11-15): without advanced play a row after
+    the playing one goes to the queue's end, the rows after it one place up; the last stays (1); the playing row,
+    one before it, advanced play's queue, or none, move nothing (0)."""
+    sink = fw.fn('playback_sink', C.c_int, C.c_uint)
+    player.mcl.type = LIBRARY
+    player.load(player.albums(6), pos=1)
+    paths = [path_at(player, i) for i in range(6)]
+    assert sink(2) == 1 and [path_at(player, i) for i in range(6)] == paths[:2] + paths[3:] + [paths[2]]
+    assert sink(5) == 1 and sink(1) == 0 and sink(0) == 0 and sink(6) == 0 and player.mcl.pos == 1
+    player.clear()
+    player.load(player.albums(6))
+    assert player.set(0, 1) == 1 and sink(player.up_next()[0]) == 0  # advanced play: its own order
+
+
+def test_a_finished_episode_leaves_the_queue(fw, player):
+    """An episode played to its end (podcast.c finished, the user's, 2026-11-15: it went to Up Next's end) leaves
+    the queue, by stock's own row delete; the row playing (the queue ended on it) stays, as does a book's chapter."""
+    finished = fw.fn('podcast__finished', None, C.c_char_p)
+    player.mcl.type = LIBRARY
+    rows = [player.song(b'/mnt/mmc/Podcasts/Show/%d.mp3' % i, b'Show', track=i + 1) for i in range(3)]
+    player.load(rows + [player.song(b'/mnt/mmc/Audiobooks/Book/1.mp3', b'Book')], pos=2)
+    finished(b'/mnt/mmc/Podcasts/Show/1.mp3')
+    assert [a[1] for _, a in fw.calls('toolsClearDeqItem')] == [1] and player.mcl.pos == 1
+    player.load([rows[0], rows[2], player.song(b'/mnt/mmc/Audiobooks/Book/1.mp3', b'Book')], pos=1)  # as it left it
+    finished(b'/mnt/mmc/Podcasts/Show/2.mp3')  # the one playing
+    finished(b'/mnt/mmc/Audiobooks/Book/1.mp3')  # a book's chapter
+    assert len(fw.calls('toolsClearDeqItem')) == 1
+
+
 def test_an_insert_remaps_every_index(fw, player):
     insert = fw.fn('playback_insert', None, C.c_uint, C.c_uint, C.c_int)
     rows = player.load(player.albums(3, 3))

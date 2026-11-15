@@ -268,3 +268,41 @@ def test_a_closed_page_lets_view_queue_open_a_new_one(fw, up):
     page.close()
     page.open()
     assert len(fw.calls('window_create')) == 2 and len(page.rows) == len(NAMES) - 1
+
+
+def test_a_row_s_menu_moves_its_episode_and_takes_it_out_of_the_queue(fw, up):
+    """A Queue row's ⋯ (the user's, 2026-11-15, where its arrows were): its menu, titled with its episode, has Move Up,
+    Move Down, Move to Top, Move to Bottom, Delete When Finished, Delete Episode and Remove from Queue; a pick closes
+    it and runs from the next loop pass, on the row it opened for; then the queue's pages are taken again."""
+    queue, page = up
+    queue.mcl.type = 0xf001  # a library queue: a local one, which the moves reorder
+    page.open()
+    out = (C.c_uint * 16)()
+    upnext = lambda: [title(queue.name(i)) for i in out[:fw.fn('playback_queue_rows', C.c_uint, C.c_void_p, C.c_uint)(out, 16)]]
+    menu = fw.fn('podcast_row_menu', None, C.c_uint)
+
+    def pick(k, row):
+        """Up Next's k-th episode's menu, its row picked and run."""
+        upnext()
+        at, name = out[k], title(queue.name(out[k]))
+        menu(at)
+        assert name in page.said and page.captions == ['Move Up', 'Move Down', 'Move to Top', 'Move to Bottom',
+                                                       'Delete When Finished: Off', 'Delete Episode', 'Remove from Queue']
+        assert page.tap(row) == 0 and fw.calls('navigator_back')
+        page.run()
+        page.close()  # the menu gone (qr_closed)
+        return name
+
+    before = upnext()
+    moved = pick(2, 0)  # Move Up: the third goes second
+    assert upnext()[:3] == [before[0], moved, before[1]]
+    at = out[1]
+    pick(1, 6)  # Remove from Queue: stock's own row delete (a stub here) on its row
+    assert [a[1] for _, a in fw.calls('toolsClearDeqItem')] == [at] and page.toasts[-1] == 'Removed from the queue'
+    pick(0, 0)  # Move Up on the first: it says so
+    assert page.toasts[-1] == "It's next already"
+    menu(out[0])
+    queue.mcl.pos = out[0]  # it plays now: the menu's row isn't Up Next's any more
+    page.tap(2)
+    page.run()
+    assert page.toasts[-1] == 'Queue changed'

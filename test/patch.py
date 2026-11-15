@@ -8787,8 +8787,9 @@ class AlbumLyricsMachine(CoverflowMachine):
 # Q2 Podcast (the user's, 2026-11-12): podcast.c podcast_more replaces the album lyrics row. Stock's Download
 # Cover & Lyrics (kind 4, third) and Look up Artist (kind 6, fifth) go; Look up Album (kind 5) reads Look up
 # Podcast, its button keeping the name stock's click reads; the skip lengths' rows follow; AirPlay's row first.
-def podcast_more_page():
+def podcast_more_page(path=None):
     m=AlbumLyricsMachine(); stock=[]
+    if path: m.word(m.playing()+O['REC_PATH'],m.string(path))
     for i,text in enumerate(['Queue','Add to Playlist','Download Cover & Lyrics','Look up Album','Look up Artist',
                              'Delete Song','A-B Repeat','Multiple Speed']):
         label=m.node('hscroll_label',text=text)
@@ -8806,6 +8807,13 @@ assert [row_text(m,k) for k in kids]==['AirPlay','Queue','Add to Playlist','Look
                                         'Multiple Speed','Skip Back: 5 s','Skip Forward: 30 s'],[row_text(m,k) for k in kids]
 assert m.nodes[stock[2]].get('destroyed') and m.nodes[stock[4]].get('destroyed') and kids[3]==stock[3]
 assert m.nodes[m.nodes[stock[3]]['children'][0]]['name']=='3'; passed()
+# On an episode (the user's, 2026-11-15, 1.8.4): Delete Song says Delete Episode, and Delete When Finished comes right
+# after it, where it is seen (at the page's end it wasn't)
+m,kids,stock=podcast_more_page('/mnt/mmc/Podcasts/Show/2024-01-01 - Ep.mp3')
+assert [row_text(m,k) for k in kids]==['AirPlay','Queue','Add to Playlist','Look up Podcast','Delete Episode',
+                                        'Delete When Finished','A-B Repeat','Multiple Speed','Skip Back: 5 s',
+                                        'Skip Forward: 30 s'],[row_text(m,k) for k in kids]
+assert kids[4]==stock[5] and m.nodes[m.nodes[stock[5]]['children'][0]]['name']=='5'; passed()
 m=AlbumLyricsMachine(); assert len(m.more(7))==7; passed()  # not stock's rows: left as they are
 
 # Sparse populated initials: one destination per sustained tick, both directions, utilities

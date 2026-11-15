@@ -604,14 +604,16 @@ def test_relabel():
     pairs = [(b'powerm_sleep', b'Sleep Timer')]
     for k, old, _ in reversed(build.LABELS):
         pairs += [(k, old), (k + b'_next', b'Kept')]
-    new = {k: n for k, _, n in build.LABELS}
+    for k, old, _ in build.LABELS_EVERY:  # each of these twice, one pair after the other, as stock lists scan_now
+        pairs[1:1] = [(k, old), (k, old)]
+    new = {k: n for k, _, n in build.LABELS + build.LABELS_EVERY}
     out = build.relabel(strings_bin(pairs))
     assert isinstance(out, bytes) and out == strings_bin([(k, new.get(k, v)) for k, v in pairs])
 
 
 @pytest.mark.parametrize('change', ['renamed', 'missing', 'twice'])
 def test_relabel_wants_each_stock_label(change):
-    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, old) for k, old, _ in build.LABELS]]
+    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, old) for k, old, _ in build.LABELS + build.LABELS_EVERY]]
     key = build.LABELS[1][0]
     if change == 'renamed':
         pairs[2] = (key, build.LABELS[1][2])
@@ -619,6 +621,19 @@ def test_relabel_wants_each_stock_label(change):
         del pairs[2]
     else:
         pairs.append(pairs[2])
+    with pytest.raises(ValueError, match=f'^Unexpected {key.decode()} label$'):
+        build.relabel(strings_bin(pairs))
+
+
+@pytest.mark.parametrize('change', ['renamed', 'missing'])
+def test_relabel_wants_every_copy_of_a_repeated_label_as_stock_has_it(change):
+    """A LABELS_EVERY key (stock lists scan_now twice): every copy its stock text, at least one."""
+    key, old, _ = build.LABELS_EVERY[0]
+    pairs = [(b'powerm_sleep', b'Sleep Timer'), *[(k, o) for k, o, _ in build.LABELS], (key, old), (key, old)]
+    if change == 'renamed':
+        pairs[-1] = (key, b'Other')
+    else:
+        del pairs[-2:]
     with pytest.raises(ValueError, match=f'^Unexpected {key.decode()} label$'):
         build.relabel(strings_bin(pairs))
 

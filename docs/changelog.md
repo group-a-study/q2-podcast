@@ -1,5 +1,12 @@
 # Changelog
 
+- **1.8.4**:
+  - An episode that plays to its end leaves the queue. Before, it went to the end of Up Next.
+  - Queue, on Now Playing and from View Queue: each episode has a ⋯ where its arrows were. It opens Move Up, Move Down, Move to Top, Move to Bottom, Delete When Finished, Delete Episode and Remove from Queue.
+  - Now Playing's ⋯ page: on an episode, Delete Song says **Delete Episode**, and **Delete When Finished** comes right after it, where you can see it (it was at the end of the page).
+  - Now Playing: the progress bar runs from the first digit of the time played to the last digit of the length, under it.
+  - Library: Update Library's choices say **Scan SD Card Now** and "Scan the SD Card?", not music.
+
 - **1.8.3**:
   - Picking an episode in a list (the Library, Folder, a podcast's page, Pocket's pages) while another is playing or paused plays it at once, and the one that was playing goes next in the queue, where it left off. Before, the pick replaced the queue and the episode that was playing dropped out of it. An episode already in the queue moves up to play instead of going in twice.
   - Now Playing's Description and Transcript no longer jump down and back as you swipe to them: a swipe's start made the page scroll back to where a finger had last left it.
