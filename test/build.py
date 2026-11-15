@@ -488,12 +488,14 @@ def validate_assets(directory):
     assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_queue', 'view_info']
     assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric', 'view_pc_chapters', 'view_pc_transcript']
     assert named['view_pc_shelf']['visible'] == 'false' and nodes['label_pc_desc'][1][1] == PC_DESC_TOP
+    assert min(c[1][1] for c in nodes['view_info'][3]) == PC_DESC_TOP  # the info's first row as Description's
     # the bar as long as the iPod page's, the times under its ends as there (the user's, 2026-11-15)
     bar = nodes['slider_play'][1]
     assert [bar[0], bar[2]] == [NP_BAR[0], NP_BAR[2]] and bar[1] + bar[3] // 2 == NP_BAR[1] + NP_BAR[3] // 2
     assert nodes['label_playtime'][1][:2] == [NP_TIME_X, NP_TIMES_Y] and nodes['label_playlen'][1][:2] == [375 - NP_TIME_X - 80, NP_TIMES_Y]
-    # the side columns' glyphs on Return's chevron and More's dots, the chapter glyphs' ink ending on the art's
-    # foot: measured on the images the build ships, each drawn centred in its frame
+    # the side columns' glyphs on Return's chevron and More's dots, PC_GAP between each glyph's ink and the next's
+    # down from Return's, the right's rows level with the left's: measured on the images the build ships, each drawn
+    # centred in its frame
     def ink(image):
         from PIL import Image
         im = Image.open(io.BytesIO(read('rootfs.squashfs', 'release/assets/default/raw/images/xx/' + image + '.png'))).convert('RGBA')
@@ -506,8 +508,14 @@ def validate_assets(directory):
     left, right = nodes['img_pc_chapprev'][1], nodes['img_pc_chapnext'][1]
     assert abs(centre2(left, 'play_chapprev') - centre2(ret, 'navbar_return')) <= 1
     assert abs(centre2(right, 'play_chapnext') - centre2(more, 'play_more')) <= 1
-    (w, h), (x0, y0, x1, y1) = ink('play_chapprev')
-    assert left[1] + (left[3] - h) // 2 + y1 == PC_ART and right[1] == left[1]
+    from ipod import PC_GAP
+    def rows(frame, image, top=PC_TOP):  # the glyph ink's first row and the row past its last, on the screen
+        (w, h), (x0, y0, x1, y1) = ink(image)
+        return top + frame[1] + (frame[3] - h) // 2 + y0, top + frame[1] + (frame[3] - h) // 2 + y1
+    spans = [rows(ret, 'navbar_return', 0)] + [rows(nodes[n][1], named[n].get('image', 'play_unfav')) for n in PC_SIDE[:3]]
+    assert [b[0] - a[1] for a, b in zip(spans, spans[1:])] == [PC_GAP] * 3, spans
+    assert rows(nodes['img_airplay'][1], 'airplay')[1] == spans[1][1]
+    assert [nodes[n][1][1] for n in PC_SIDE[4:]] == [nodes[n][1][1] for n in PC_SIDE[1:3]]
     # stock's hit test skips only insensitive widgets: the hidden shelf took every touch on the pages (1.8.0)
     assert named['view_pc_shelf']['sensitive'] == 'false' and nodes['view_pc_shelf'][1][0] < -300
     assert named['image_wait']['sensitive'] == 'false'

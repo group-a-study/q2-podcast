@@ -1046,6 +1046,8 @@ void playback_np(void) {
  * press: an app's .play (press_natural), Shuffle Albums' load, DLNA and online. */
 int ringnav_player_start(void *q, int at, int cls, int mode) {
     void *from = __builtin_return_address(0);
+    int ui = from == (void *)PAGE_PICK_RET || from == (void *)ALBUM_PLAY_RET ||
+             from == (void *)ALBUMINFO_PLAY_RET; /* a press on the UI thread, not SyncLink's */
     if (!press_natural && !s.grouping && local_class(cls) && playback_keeps(q, at)) {
         if (at != M(MCL_POS) || deque_size(q) != deque_size(queue()) || cls != M(MCL_TYPE))
             resume_return();
@@ -1057,6 +1059,8 @@ int ringnav_player_start(void *q, int at, int cls, int mode) {
             return 1;
         }
     }
+    /* Q2 Podcast: an episode picked plays and the one playing goes next (podcast.c podcast_pick) */
+    if (!press_natural && !s.grouping && ui && local_class(cls) && podcast_pick(q, at)) return 1;
     return stock_player_start_trampoline(q, at, cls, mode);
 }
 int playback_group_skip(int forward) {
@@ -1345,6 +1349,17 @@ int playback_play_now(void *r) {
     player_start_queue((int)pos);
     playback_save();
     return 1;
+}
+
+/* The queue's row whose file is path (not the playing one), or -1. */
+int playback_find(const char *path) {
+    void *q = queue();
+    unsigned pos = (unsigned)M(MCL_POS);
+    for (unsigned i = 0, n = q && path ? deque_size(q) : 0; i < n; ++i) {
+        const char *p = P(deque_at(q, i), REC_PATH);
+        if (i != pos && p && !strcmp(p, path)) return (int)i;
+    }
+    return -1;
 }
 
 /* Takes the queue's row at `at` out (a file deleted: podcast.c), never the playing one: stock's

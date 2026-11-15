@@ -884,6 +884,37 @@ def test_play_now_plays_a_pick_and_the_playing_track_goes_next(fw, player, mcl):
     assert len(player.deques[player.handle]) == 5
 
 
+def test_a_list_pick_of_an_episode_plays_it_and_the_playing_one_goes_next(fw, player, mcl):
+    """A list's pick of a podcast episode while a local queue plays or is paused (the user's, 2026-11-15: a file
+    picked took the queue, the episode playing out of it): it plays now and the one playing is next, the queue
+    after as it was; one the queue has moves up instead, never in twice; music, a stopped player, or none of it,
+    keep stock's load (0)."""
+    pick = fw.fn('podcast_pick', C.c_int, C.c_void_p, C.c_int)
+    player.mcl.type = LIBRARY
+    player.load([player.song(b'/mnt/mmc/Podcasts/Show/%d.mp3' % i, b'Show', track=i + 1) for i in range(4)], pos=1)
+    paths = [path_at(player, i) for i in range(4)]
+    new = player.song(b'/mnt/mmc/Podcasts/Other/new.mp3', b'Other')
+    music = player.song(b'/mnt/mmc/Music/A/1.flac', b'A')
+    lst = player.deques.new([music, new, player.song(paths[3], b'Show', track=4)])  # its own row, not the queue's
+    C.c_uint64.from_address(O['MCL_POOL']).value = player.deques.new()
+    fw.mock('mclGetPlayStatus', lambda *_: 1)  # stopped: stock loads the list
+    assert pick(lst, 1) == 0 and not fw.calls('player_start_queue')
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    assert pick(lst, 0) == 0  # music: stock's load
+    assert pick(lst, 5) == 0 and pick(None, 0) == 0
+    assert pick(lst, 1) == 1
+    assert [path_at(player, i) for i in range(5)] == [paths[0], b'/mnt/mmc/Podcasts/Other/new.mp3', paths[1], *paths[2:]]
+    assert [a[0] for _, a in fw.calls('player_start_queue')] == [1] and player.mcl.pos == 1
+    # one the queue has (row 4, the old row 3): it moves up to play, the one playing after it; the queue keeps 5 rows
+    now = path_at(player, 1)
+    C.c_uint64.from_address(O['MCL_POOL']).value = player.deques.new()
+    assert pick(lst, 2) == 1 and len(player.deques[player.handle]) == 5
+    assert path_at(player, player.mcl.pos) == paths[3] and path_at(player, player.mcl.pos + 1) == now
+    assert len(fw.calls('player_start_queue')) == 2
+    find = fw.fn('playback_find', C.c_int, C.c_char_p)
+    assert find(paths[0]) == 0 and find(b'/nowhere.mp3') == -1 and find(path_at(player, player.mcl.pos)) == -1
+
+
 def test_an_insert_remaps_every_index(fw, player):
     insert = fw.fn('playback_insert', None, C.c_uint, C.c_uint, C.c_int)
     rows = player.load(player.albums(3, 3))

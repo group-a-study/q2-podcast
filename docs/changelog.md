@@ -1,5 +1,14 @@
 # Changelog
 
+- **1.8.3**:
+  - Picking an episode in a list (the Library, Folder, a podcast's page, Pocket's pages) while another is playing or paused plays it at once, and the one that was playing goes next in the queue, where it left off. Before, the pick replaced the queue and the episode that was playing dropped out of it. An episode already in the queue moves up to play instead of going in twice.
+  - Now Playing's Description and Transcript no longer jump down and back as you swipe to them: a swipe's start made the page scroll back to where a finger had last left it.
+  - Transcript: every paragraph is white, not only the one being spoken. The page still follows the episode.
+  - Now Playing's info page: the same room above its first line as Description and Transcript.
+  - Queue, on Now Playing and from View Queue: every episode shows its podcast's art. A podcast Cover Flow hadn't drawn yet showed a grey tile; its cover is now made in the background from the episode's file and appears a moment later.
+  - Now Playing: the buttons beside the cover are evenly spaced, the same gap from the back arrow to the star, from the star to skip back and from skip back to the previous chapter (the gap the star and skip back had). The right column's buttons sit level with the left's.
+  - Pocket 1.6 (in the App Store) only takes from Pocket Casts now: nothing on the Q2 changes your account's Up Next, places or played episodes. An episode added to Up Next on your phone goes to the top of the Q2's Up Next (after the episode playing); one taken out on your phone leaves it; one finished on the Q2 leaves the Q2's Up Next only. Pocket opens at once, without waiting for a sync.
+
 - **1.8.2**:
   - Cover Flow: tapping a podcast's cover lists its episodes again (it came up blank). Picking an episode while another is playing or paused plays it at once, and the one that was playing goes next in the queue, where it left off.
   - Now Playing: the progress bar is as long as the iPod layout's, with the times under its ends.

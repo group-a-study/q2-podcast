@@ -1478,6 +1478,43 @@ def builder(fw, card, cover=False, thumb=False, ff=None):
         statuses(fw, ff)
 
 
+def roomy(path, buf, *_):  # statfs: a card with room
+    words = C.cast(buf, C.POINTER(C.c_uint))
+    words[1], words[7] = 4096, 1 << 24
+    return 0
+
+
+def test_a_queue_row_s_show_cover_is_made_by_folder_on_a_thread_once(fw):
+    """Q2 Podcast's Queue rows (the user's, 2026-11-15: grey tiles where Cover Flow had drawn no cover): a row asks for
+    its folder's cover once; the next poll starts a run on its own thread, which makes it as build_art makes an
+    album's; the poll after it ends joins it and counts it, and the row then has its file:// URL. A folder without art
+    keeps the empty marker and is asked for no more."""
+    art_of = fw.fn('coverflow_folder_art', C.c_char_p, C.c_char_p, C.c_char_p)
+    poll = fw.fn('coverflow_folder_art_poll', C.c_uint)
+    work = fw.fn('coverflow__folder_worker', C.c_void_p, C.c_void_p)
+    card = Card(fw, {'/mnt/mmc/Podcasts/Show/a.mp3': b'', '/mnt/mmc/Podcasts/Bare/b.mp3': b''})
+    builder(fw, card, cover=True)
+    fw.mock('fw_statfs', roomy)
+    out = C.create_string_buffer(600)
+    assert art_of(b'/mnt/mmc/Podcasts/Show/a.mp3', out) is None
+    assert art_of(b'/mnt/mmc/Podcasts/Show/c.mp3', out) is None  # the same show: asked once
+    assert poll() == 0 and len(fw.calls('fw_pthread_create')) == 1
+    assert poll() == 0 and len(fw.calls('fw_pthread_create')) == 1  # one run at a time
+    work(None)  # the run, here on this thread
+    assert poll() == 1 and len(fw.calls('fw_pthread_join')) == 1
+    url = art_of(b'/mnt/mmc/Podcasts/Show/c.mp3', out)
+    assert url and url.startswith(b'file:///mnt/mmc/.coverflow/f') and card.files[url[7:].decode()] == b'art'
+    builder(fw, card, ff=0)  # no art at all: ffmpeg found none
+    before = set(card.files)
+    assert art_of(b'/mnt/mmc/Podcasts/Bare/b.mp3', out) is None
+    poll()
+    work(None)
+    marker, = set(card.files) - before
+    assert card.files[marker] == b'' and marker.startswith('/mnt/mmc/.coverflow/f')
+    assert poll() == 2 and art_of(b'/mnt/mmc/Podcasts/Bare/b.mp3', out) is None
+    assert poll() == 2 and len(fw.calls('fw_pthread_create')) == 2  # its marker: not asked again
+
+
 def test_build_art_embedded_art_is_the_cache_file(fw):
     g = api(fw)
     card = Card(fw, {'/m/a.mp3': b''})

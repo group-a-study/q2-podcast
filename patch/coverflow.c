@@ -133,12 +133,13 @@ static char *art_path(char *out, unsigned key, const char *suffix) {
     return out;
 }
 /* The cover Cover Flow made of an album artist's album, as a file:// URL in out (at least 520
- * bytes), or 0 when it has none yet: Q2 Podcast's Queue rows (podcast.c ep_art). */
+ * bytes), or 0 when it has none yet, or none to be had (its empty marker): Q2 Podcast's Queue rows
+ * (podcast.c ep_art). */
 const char *coverflow_art_url(const char *artist, const char *album, char *out) {
     if (!album || !*album) return 0;
     memcpy(out, "file://", 7);
     art_path(out + 7, tags_key(artist, album), "");
-    return access(out + 7, 0) ? 0 : out;
+    return file_size(out + 7) > 0 ? out : 0;
 }
 /* Asks the image cache for a cover only once its file exists: a load made before the worker wrote
  * it stays a failure, and the placeholder would stay until a reboot. url is "file://" + the path. */
@@ -429,26 +430,24 @@ int coverflow_folder_cover(const char *track, const char *dst, int w, int h) {
  * costs a process for every album without art; written to .tmp and renamed. An empty file marks
  * "no art", so the placeholder shows and the album is not retried until Refresh Coverflow; a run
  * ffmpeg did not finish leaves none. ponytail: an album whose ffmpeg is killed every time costs
- * one kill per open. A playlist kept as an album (playlist_album) takes its folder's picture first. */
-static void build_art(const job_t *j) {
-    char dst[512], tmp[512];
+ * one kill per open. A playlist kept as an album (playlist_album) takes its folder's picture first.
+ * px square at dst; Cover Flow's (build_art) and a show folder's (folder_worker). */
+static void build_cover(const job_t *j, const char *dst, const char *tmp, int px) {
     if (access(j->track, 0)) return; /* storage gone: no marker, the next open retries */
-    art_path(dst, j->key, "");
-    art_path(tmp, j->key, ".tmp");
     /* toolsGetAlbumCover goes through the shared /tmp/.tmp_picture, which stock guards with
      * either lock (parse_albumcovertask_thd, player_parsecover_thd); hold both. Stock never
      * nests them, so this order cannot deadlock. */
     unsigned kills = ff_kills;
-    int ok = playlist_album(j->track) && beside_art(j->track, tmp, ART_SIZE, ART_SIZE, 0, thumb);
+    int ok = playlist_album(j->track) && beside_art(j->track, tmp, px, px, 0, thumb);
     if (!ok) {
         pthread_mutex_lock((void *)parse_cover_mutex);
         pthread_mutex_lock((void *)g_playcover_mutex);
-        ok = toolsGetAlbumCover(j->track, tmp, ART_SIZE, ART_SIZE) == 1;
+        ok = toolsGetAlbumCover(j->track, tmp, px, px) == 1;
         pthread_mutex_unlock((void *)g_playcover_mutex);
         pthread_mutex_unlock((void *)parse_cover_mutex);
     }
-    ok = ok || beside_art(j->track, tmp, ART_SIZE, ART_SIZE, j->shared, thumb) ||
-         ff_thumb(j->track, tmp, ART_SIZE, ART_SIZE);
+    ok = ok || beside_art(j->track, tmp, px, px, j->shared, thumb) ||
+         ff_thumb(j->track, tmp, px, px);
     if (ok && !rename(tmp, dst)) return;
     unlink(tmp);
     /* No marker when an ffmpeg run meanwhile never reached its own exit (a refused fork, or killed:
@@ -457,6 +456,87 @@ static void build_art(const job_t *j) {
     if (kills != ff_kills || access(j->track, 0)) return;
     void *f = fopen(dst, "w");
     if (f) fclose(f);
+}
+static void build_art(const job_t *j) {
+    char dst[512], tmp[512];
+    build_cover(j, art_path(dst, j->key, ""), art_path(tmp, j->key, ".tmp"), ART_SIZE);
+}
+
+/* Q2 Podcast's Queue rows (the user's, 2026-11-15: every row but one a grey tile, as Cover Flow had
+ * drawn only that one's show): a show's cover by its folder, FOLDER_ART_PX square at
+ * ART_DIR/f<folder key>.jpg, made as build_cover makes an album's, from the first episode a row
+ * asked with, on a thread of its own, FOLDER_ART_N a run. A run takes the asks made since the last
+ * one, and the UI thread adds asks only between runs; a folder is asked for once a boot. */
+#define FOLDER_ART_N 16
+#define FOLDER_ART_PX 96
+#define FOLDER_ASKED 128
+static struct {
+    unsigned long thread;
+    int running;
+    volatile int cancel, finished;
+    unsigned n, wants, runs;          /* the run's jobs, the asks for the next, the runs ended */
+    job_t jobs[FOLDER_ART_N], want[FOLDER_ART_N];
+    unsigned asked[FOLDER_ASKED], na; /* folders asked for this boot, a ring */
+} fa;
+
+static char *folder_art_path(char *out, unsigned key, const char *suffix) {
+    tk_snprintf(out, 512, ART_DIR "/f%08x.jpg%s", key, suffix);
+    return out;
+}
+
+static void *folder_worker(void *unused) {
+    char dst[512], tmp[512];
+    for (unsigned i = 0; i < fa.n && !fa.cancel; ++i)
+        build_cover(&fa.jobs[i], folder_art_path(dst, fa.jobs[i].key, ""),
+                    folder_art_path(tmp, fa.jobs[i].key, ".tmp"), FOLDER_ART_PX);
+    __atomic_store_n(&fa.finished, 1, __ATOMIC_RELEASE);
+    return 0;
+}
+
+/* track's show cover for a row, as a file:// URL in out (at least 520 bytes); 0 while it is made
+ * (asked for here; coverflow_folder_art_poll starts the run) or when its folder has none. */
+const char *coverflow_folder_art(const char *track, char *out) {
+    const char *slash = track ? strrchr(track, '/') : 0;
+    if (!slash) return 0;
+    unsigned key =
+        hash_bytes(FNV_SEED, (const unsigned char *)track, (unsigned)(slash - track)) | 1;
+    memcpy(out, "file://", 7);
+    folder_art_path(out + 7, key, "");
+    long size = file_size(out + 7);
+    if (size >= 0) return size > 0 ? out : 0; /* an empty file: the folder has no art */
+    for (unsigned i = 0; i < FOLDER_ASKED; ++i)
+        if (fa.asked[i] == key) return 0;
+    if (fa.wants == FOLDER_ART_N) return 0; /* asked at the next look */
+    char *copy = strdup(track);
+    if (!copy) return 0;
+    fa.asked[fa.na++ % FOLDER_ASKED] = key;
+    fa.want[fa.wants].track = copy, fa.want[fa.wants].key = key, fa.want[fa.wants++].shared = 0;
+    return 0;
+}
+
+/* The folder covers' thread, every UI pass: a run that ended joined and its jobs let go; the asks
+ * since, if any, as the next run. Returns the runs ended, so a page that showed rows without their
+ * covers shows them again once it changes. */
+unsigned coverflow_folder_art_poll(void) {
+    if (fa.running && __atomic_load_n(&fa.finished, __ATOMIC_ACQUIRE)) {
+        pthread_join(fa.thread, 0);
+        fa.running = 0;
+        for (unsigned i = 0; i < fa.n; ++i) free(fa.jobs[i].track);
+        fa.n = 0;
+        ++fa.runs;
+    }
+    if (!fa.running && fa.wants) {
+        mkdir(ART_DIR, 0755);
+        memcpy(fa.jobs, fa.want, fa.wants * sizeof *fa.want);
+        fa.n = fa.wants, fa.wants = 0, fa.finished = fa.cancel = 0;
+        if (card_space(ART_DIR) && !pthread_create(&fa.thread, 0, folder_worker, 0))
+            fa.running = 1;
+        else {
+            for (unsigned i = 0; i < fa.n; ++i) free(fa.jobs[i].track);
+            fa.n = 0;
+        }
+    }
+    return fa.runs;
 }
 
 static unsigned art_counts[2]; /* crash_note's, every 50th album */
@@ -508,7 +588,7 @@ static void strike(void) {
  * writing no note for the next, which the kill that follows would leave for strike, and this one's
  * goes. */
 void coverflow_clean_end(void) {
-    cf.cancel = 1;
+    cf.cancel = fa.cancel = 1;
     unlink(BUILDING);
 }
 

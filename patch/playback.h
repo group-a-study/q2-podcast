@@ -21,6 +21,8 @@ int playback_raise(unsigned row);     /* their up arrow: row swaps with the one 
 int playback_play_swap(unsigned at);  /* their tap: the index to start (at to play, the playing one next), -1 none */
 int playback_play_now(void *r);       /* Cover Flow's pick: r plays, the playing one next; 0 none */
 int playback_drop(unsigned at);       /* a deleted file's row out of the queue, never the playing one */
+int playback_find(const char *path); /* the queue's row of that file (not the playing one), or -1 */
+int podcast_pick(void *q, int at);    /* podcast.c: a list's pick of an episode, played now */
 void playback_poll(void);
 void playback_speed_start(void);
 void playback_track_speed(void); /* a track's start: the folder's speed, to the decoder */

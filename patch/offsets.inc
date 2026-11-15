@@ -37,6 +37,11 @@
 #define VIEW_HORIZONTAL 0x90    /* scroll_view xslidable */
 #define VIEW_VERTICAL 0x91      /* scroll_view yslidable */
 #define VIEW_SNAP 0x92          /* scroll_view snap_to_page */
+/* scroll_view's xoffset_end and yoffset_end: scroll_view_scroll_to (0x5f0178) keeps its target
+ * there, a press keeps the offset there, and a pointer abort (on_event, 0x5f0618) scrolls back to
+ * them in 300 ms, pressed or not; scroll_view_set_offset leaves them as they were */
+#define VIEW_XEND 0xa8
+#define VIEW_YEND 0xac
 #define TABLE_ANIMATOR 0xd0
 #define VIEW_ANIMATOR 0xe8
 #define EVENT_TYPE 0x00

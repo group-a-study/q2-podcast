@@ -103,6 +103,10 @@ static int un_closed(void *ctx, void *event) {
     un.page = 0;
     return 0;
 }
+/* Its rows taken again, the selection kept: covers made since they were (podcast.c). */
+void up_next_again(void) {
+    if (un.page && un.view) un_fill(widget_get_prop_int(un.view, SEL, -1));
+}
 void up_next(int (*keyup)(void *, void *)) {
     if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
     un_fill(-1);

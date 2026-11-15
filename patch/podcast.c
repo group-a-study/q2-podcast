@@ -98,6 +98,7 @@ static struct {
     unsigned q_sig, q_n; /* the queue as the page shows it (q_sign), its Up Next rows */
     unsigned q_idx[QUEUE_ROWS]; /* their queue indices, in play order */
     unsigned q_again;           /* when to build it again: a row the library hadn't got (0 none) */
+    unsigned art_runs;          /* coverflow_folder_art_poll's count as the Queue pages last saw */
     char *desc;
     int lit, shown_count;
     unsigned shown_desc, shown_rows; /* the track each page shows, ~0 to build again */
@@ -628,13 +629,17 @@ static const char *ep_show(void *r, char *buf, unsigned size) {
 }
 
 /* r's art for a row: Cover Flow's cover of its show (coverflow.c keys it by its album row's artist
- * and album: the album artist's or the artist's, as the library has them), else stock's disc. */
+ * and album: the album artist's or the artist's, as the library has them), else its show folder's
+ * (coverflow_folder_art, made on its own thread for a show Cover Flow hasn't drawn: the page is
+ * built again once a run of them ends, podcast_poll), else stock's disc. */
 extern const char *coverflow_art_url(const char *artist, const char *album, char *out);
+void up_next_again(void); /* upnext.c */
 static const char *ep_art(void *r, char *out) {
     ep_t *e = ep_of(r);
     const char *url = e && e->show ? coverflow_art_url(e->album_artist, e->show, out) : 0;
     if (!url && e && e->show) url = coverflow_art_url(e->artist, e->show, out);
     if (!url) url = coverflow_art_url(P(r, REC_ARTIST), P(r, REC_ALBUM), out);
+    if (!url) url = coverflow_folder_art(P(r, REC_PATH), out);
     return url ? url : "default_album_small";
 }
 
@@ -887,13 +892,12 @@ static struct {
 } gl;
 
 /* Transcript as read for track: its paragraphs' starts (seconds) and texts (offsets into text,
- * each nul-ended), n of them; built: those laid out so far, y the next one's top; lit: the one in
- * white; held: the wheel or a finger moved it (until it leaves the front); set_y: the offset
- * podcast.c last gave it. */
+ * each nul-ended), n of them; built: those laid out so far, y the next one's top; held: the wheel
+ * or a finger moved it (until it leaves the front); set_y: the offset podcast.c last gave it. */
 static struct {
     unsigned track, looked;
     char *text;
-    int *sec, *off, n, built, y, lit, held, set_y;
+    int *sec, *off, n, built, y, held, set_y;
 } tr;
 
 static int pages_gone(void *win, void *event) {
@@ -903,7 +907,7 @@ static int pages_gone(void *win, void *event) {
     pc.bar = pc.line[0] = pc.line[1] = pc.front = 0;
     if (gl.raw && wheel_raw == WHEEL_RAW) wheel_raw = WHEEL_TICKS;
     gl.raw = gl.on = 0, gl.view = 0;
-    tr.built = tr.y = 0, tr.lit = -1; /* the next page lays it out again */
+    tr.built = tr.y = 0; /* the next page lays it out again */
     return 0;
 }
 
@@ -969,7 +973,7 @@ void podcast_attach(void *win) {
     pc.line[1] = widget_lookup(win, "scrlabel_artist", 1);
     pc.shown_desc = pc.shown_rows = ~0u;
     pc.front = 0;
-    tr.built = tr.y = 0, tr.lit = -1, tr.held = 0;
+    tr.built = tr.y = tr.held = 0;
     for (int b = 0; b < B_N; ++b) {
         void *w = widget_lookup(win, button_names[b], 1);
         if (w) widget_on(w, EVT_CLICK, button_tap, (void *)(long)b);
@@ -994,11 +998,21 @@ static int view_max(void *v) {
     return m > 0 ? m : 0;
 }
 
+/* v's offset y, as a pointer abort or the next press takes it too: scroll_view_set_offset leaves
+ * the view's end (VIEW_YEND) where the last drag or scroll_to put it, and the abort a swipe sends
+ * scrolled the page back there in 300 ms (the user's, 2026-11-15: Description and Transcript jumped
+ * down as they came in, then back to where they were put). */
+static void view_put(void *v, int y) {
+    scroll_view_set_offset(v, I(v, SCROLL_X), y);
+    I(v, VIEW_XEND) = I(v, SCROLL_X);
+    I(v, VIEW_YEND) = I(v, SCROLL_Y);
+}
+
 /* v jumps to y, nothing gliding or flung. */
 static void view_at(void *v, int y) {
     view_still(v);
     if (gl.view == v) gl.on = 0;
-    scroll_view_set_offset(v, I(v, SCROLL_X), y);
+    view_put(v, y);
     if (v == pc.tr_view) tr.set_y = y;
 }
 
@@ -1029,7 +1043,7 @@ static void glide_step(void *front) {
     if (dt > GLIDE_EASE_MS) dt = GLIDE_EASE_MS; /* a late pass: half the way, no leap */
     int step = (to - y) * dt / (dt + GLIDE_EASE_MS);
     y += step ? step : to > y ? 1 : -1;
-    scroll_view_set_offset(gl.view, I(gl.view, SCROLL_X), y);
+    view_put(gl.view, y);
     if (gl.view == pc.tr_view) tr.set_y = y;
 }
 
@@ -1134,7 +1148,7 @@ static void desc_top(void *front, unsigned now) {
 static void transcript_drop(void) {
     free(tr.text), free(tr.sec), free(tr.off);
     tr.text = 0, tr.sec = tr.off = 0;
-    tr.n = tr.built = tr.y = tr.held = 0, tr.lit = -1;
+    tr.n = tr.built = tr.y = tr.held = 0;
     if (pc.tr_view) widget_destroy_children(pc.tr_view);
 }
 
@@ -1212,7 +1226,8 @@ static void transcript_load(void *r) {
     if (!tr.n) transcript_drop();
 }
 
-/* TR_BUILD_PASS more paragraphs laid out, each a wrapped label in Description's text, grey. */
+/* TR_BUILD_PASS more paragraphs laid out, each a wrapped label in Description's text, white, as
+ * Description's (the user's, 2026-11-15: every paragraph lit, not only the one playing). */
 static void transcript_build(void) {
     int w = I(pc.tr_view, W_W) - 2 * PAGE_X;
     if (!tr.built) tr.y = DESC_TOP;
@@ -1224,7 +1239,7 @@ static void transcript_build(void) {
         widget_set_prop_int(t, "style:normal:font_size", 16);
         widget_set_prop_str(t, "style:normal:text_align_h", "left");
         widget_set_prop_str(t, "style:normal:text_align_v", "top");
-        widget_set_prop_int(t, "style:normal:text_color", (int)GREY);
+        widget_set_prop_int(t, "style:normal:text_color", (int)0xffffffffu);
         widget_set_text_utf8(t, tr.text + tr.off[tr.built]);
         label_resize_to_content(t, (unsigned)w, (unsigned)w, TEXT_ROW_PX, 0x7fff);
         tr.y += I(t, W_H) + TR_GAP;
@@ -1232,9 +1247,9 @@ static void transcript_build(void) {
     widget_set_prop_int(pc.tr_view, "virtual_h", tr.y - TR_GAP + PAGE_X);
 }
 
-/* The paragraph playing in white; the page follows it (its top DESC_TOP under the page's), gliding
- * in front and jumping elsewhere, unless the wheel or a finger holds it there, which lasts until
- * the page leaves the front. */
+/* The page follows the paragraph playing (its top DESC_TOP under the page's), gliding in front and
+ * jumping elsewhere, unless the wheel or a finger holds it there, which lasts until the page leaves
+ * the front. */
 static void transcript_follow(void *front, unsigned now) {
     void *v = pc.tr_view;
     int here = front == pc.tr_page, sec = np_second(), i = -1;
@@ -1243,16 +1258,6 @@ static void transcript_follow(void *front, unsigned now) {
     else if (pointer_down() && now - pc.front_at > HOLD_TOUCH_MS && I(v, SCROLL_Y) != tr.set_y)
         tr.held = 1;
     while (sec >= 0 && i + 1 < tr.built && tr.sec[i + 1] <= sec) ++i;
-    if (i != tr.lit && g_backlight_status) {
-        for (int k = 0; k < 2; ++k) {
-            int at = k ? i : tr.lit;
-            void *t = at >= 0 && at < tr.built ? widget_get_child(v, (unsigned)at) : 0;
-            if (!t) continue;
-            widget_set_prop_int(t, "style:normal:text_color", (int)(k ? 0xffffffffu : GREY));
-            widget_invalidate_force(t, 0);
-        }
-        tr.lit = i;
-    }
     if (tr.held || i < 0 || pointer_down()) return;
     int to = I(widget_get_child(v, (unsigned)i), W_Y) - DESC_TOP, max = view_max(v);
     if (to > max) to = max;
@@ -1319,6 +1324,29 @@ int podcast_row_arrow(void *item, void *event) {
     int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) }, w = I(item, W_W);
     widget_to_local(item, xy);
     return xy[0] < w - 2 * ARROW_W || xy[0] >= w ? 0 : xy[0] < w - ARROW_W ? -1 : 1;
+}
+
+/* A list's pick of a podcast episode (ringnav_player_start: a press in Library, Folder, an album
+ * page or an app's row; not an app's .play, as Pocket's Up Next plays, nor SyncLink's) while a
+ * local queue plays or is paused (the user's, 2026-11-15: a file picked took the queue, the episode
+ * playing out of it): the pick plays and the one playing goes first in Up Next, the queue after it
+ * as it was, as a Cover Flow pick does (playback_play_now). One the queue has already moves up
+ * instead (playback_play_swap), never in it twice. A CUE chapter keeps stock's load, as a book's
+ * list does. Returns 1 when it started, 0 for stock's load of the list. */
+int podcast_pick(void *q, int at) {
+    void *r = q && at >= 0 && (unsigned)at < deque_size(q) ? deque_at(q, (unsigned)at) : 0;
+    const char *path = r ? P(r, REC_PATH) : 0;
+    int status = mclGetPlayStatus();
+    if (!path || strncasecmp(path, PODCASTS, sizeof PODCASTS - 1) || I(r, REC_CUE_START) ||
+        I(r, REC_CUE_END) || (status != 2 && status != 3))
+        return 0;
+    int in = playback_find(path);
+    if (in < 0) return playback_play_now(r);
+    int start = playback_play_swap((unsigned)in);
+    if (start < 0) return 0;
+    press_stamp();
+    player_start_queue(start);
+    return 1;
 }
 
 /* The playing local track's row, or 0: the queue's at its position, whatever the play status
@@ -1401,7 +1429,7 @@ static void queue_show(unsigned now) {
         y += Q_ROW_H;
     }
     widget_set_prop_int(view, "virtual_h", y > h ? y : h);
-    if (keep) scroll_view_set_offset(view, 0, keep < view_max(view) ? keep : view_max(view));
+    if (keep) view_put(view, keep < view_max(view) ? keep : view_max(view));
     pc.q_again = missing ? (now + EP_RETRY_MS) | 1 : 0;
 }
 
@@ -1462,7 +1490,7 @@ static void rows_light(void) {
     pc.lit = i;
     if (i >= 0 && np_front() != pc.ch_page) {
         int max = pc.shown_count * ROW_H - I(pc.ch_view, W_H), y = i * ROW_H;
-        scroll_view_set_offset(pc.ch_view, 0, y < max ? y : max > 0 ? max : 0);
+        view_put(pc.ch_view, y < max ? y : max > 0 ? max : 0);
     }
 }
 
@@ -1540,6 +1568,8 @@ void podcast_poll(void) {
     }
     if (now - pc.polled < POLL_MS && pc.polled) return;
     pc.polled = now;
+    unsigned runs = coverflow_folder_art_poll(); /* covers made since: the Queue pages show them */
+    if (runs != pc.art_runs) pc.art_runs = runs, pc.q_sig = 0, up_next_again();
     void *r = queue_now(&at, &n);
     track_check(r, now);
     finish_poll();

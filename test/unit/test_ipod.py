@@ -558,12 +558,21 @@ def test_playing_stock(audited):
     assert [n[t][1] for t in ('label_playtime', 'label_playlen')] == [[ipod.NP_TIME_X, ipod.NP_TIMES_Y, 80, 16],
                                                                      [375 - ipod.NP_TIME_X - 80, ipod.NP_TIMES_Y, 80, 16]]
     # the columns' glyphs: the left's ink centred on Return's chevron, the right's on More's dots (twice the centres,
-    # from ipod.py's ink columns; test/build.py measures the shipped images), both PC_SIDE_DROP down
+    # from ipod.py's ink columns; test/build.py measures the shipped images); down the left, PC_GAP from each glyph's
+    # ink to the next's, from Return's; the right's rows level with the left's (the user's, 2026-11-15)
     (lx, ly), (rx, _) = ipod.pc_frames()[0], ipod.pc_frames()[3]
     ret, more = n['img_return'][1], n['img_more'][1]
     assert abs(2 * lx + ipod.PC_GLYPH_INK2 - (2 * ret[0] + ipod.PC_RETURN_INK2)) <= 1
     assert abs(2 * rx + ipod.PC_GLYPH_INK2 - (2 * more[0] + ipod.PC_MORE_INK2)) <= 1
-    assert ly == ipod.PC_SIDE_DROP > 0
+    def span(y, image, frame_h=ipod.PC_BTN, top=ipod.PC_TOP):
+        size, first, end = ipod.pc_ink_rows(image)
+        return top + y + (frame_h - size) // 2 + first, top + y + (frame_h - size) // 2 + end
+    frames = ipod.pc_frames()
+    spans = [span(0, 'navbar_return', ipod.NP_TOP, 0)] + [span(y, image) for (_, y), image in zip(frames, ipod.PC_IMAGES[:3])]
+    assert [b[0] - a[1] for a, b in zip(spans, spans[1:])] == [ipod.PC_GAP] * 3
+    assert span(frames[3][1], 'airplay')[1] == spans[1][1] and [y for _, y in frames[4:]] == [y for _, y in frames[1:3]]
+    assert min(y for _, y in frames) >= 0
+    assert min(c[1][1] for c in n['view_info'][3]) == ipod.PC_DESC_TOP  # the info's first row as Description's
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
     assert [c[2]['name'] for c in root[3]] == ['view_buttons', 'label_playtime', 'label_playlen', 'slide_view_view', 'slider_play',
                                                'img_repeata', 'img_repeatb', 'image_wait']

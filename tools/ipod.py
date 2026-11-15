@@ -865,8 +865,9 @@ def playing_stock(data):
         'word_wrap': 'true'}, []]])
     # the Queue (the user's, 2026-11-12): podcast.c fills it, the playing episode and Up Next, each with arrows
     named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_queue', []), info_page]
-    for n in named['view_info'][3]:
+    for n in named['view_info'][3]:  # its first row PC_DESC_TOP down, as Description's (the user's, 2026-11-15)
         n[1][0] += (375 - 225) // 2
+        n[1][1] += PC_DESC_TOP
     dots_y = PC_DOTS - PC_TOP
     named['slide_view_view'][1] = [0, PC_TOP, 375, dots_y + 10]
     named['slide_view'][1] = [0, 0, 375, slide_h]
@@ -924,18 +925,40 @@ PC_IMAGES = ('play_unfav', 'play_back5', 'play_chapprev', 'airplay', 'play_fwd30
 # The columns line up with the top row's glyphs (the user's, 2026-11-15): the left one's centre on Return's chevron,
 # the right one's on More's dots. Centres in half pixels: navbar_return's ink is columns 13 to 24 of its 50 px image,
 # drawn centred in Return's 50 px frame; play_more's 2 to 25 of 28, centred in More's; the side glyphs' 3 to 24 of 28,
-# centred in their PC_BTN frames (test/build.py measures them all). The columns sit lower than the art's top, so the
-# chapter glyphs' ink (rows 6 to 21 of 28) ends on the art's foot: PC_SIDE_DROP.
+# centred in their PC_BTN frames (test/build.py measures them all).
 PC_RETURN_INK2, PC_MORE_INK2, PC_GLYPH_INK2 = 13 + 24, 11 * 2 + 2 + 25, 11 * 2 + 3 + 24
-PC_SIDE_DROP = PC_ART - ((PC_BTN - 28) // 2 + 21 + 1) - 2 * ((PC_ART - PC_BTN) // 2)  # the foot frame's ink ends on PC_ART
+# Down the columns (the user's, 2026-11-15, 1.8.3): PC_GAP between one glyph's ink and the next's, Return's chevron to
+# the star, the star to skip back and skip back to the previous chapter, the gap the star and skip back had in 1.8.2;
+# the right column's rows level with the left's, so AirPlay's ink ends where the star's does. Each glyph's ink rows
+# (image height, first row, the row past the last; test/build.py measures the shipped images): Return's chevron, drawn
+# centred in the top row's NP_TOP, the star, the skip glyphs (every length's), the chapter glyphs and AirPlay's.
+PC_GAP = 34
+PC_INK_ROWS = {'navbar_return': (50, 15, 35), 'play_unfav': (28, 2, 24), 'skip': (28, 1, 26), 'chapter': (28, 6, 22),
+               'airplay': (50, 13, 37)}
+
+
+def pc_ink_rows(image):
+    return PC_INK_ROWS['skip' if image.startswith(('play_back', 'play_fwd')) else
+                       'chapter' if image.startswith('play_chap') else image]
 
 
 def pc_frames():
     """The side buttons' frames' x, y on the first page, in PC_SIDE's order: the left column centred on Return's
-    chevron, the right on More's dots, each PC_SIDE_DROP below the art's top, PC_ART - PC_BTN apart top to foot."""
+    chevron, the right on More's dots, their glyphs' ink PC_GAP apart down from Return's, the rows level."""
     left = ((375 - NP_ICONS_END) * 2 + PC_RETURN_INK2 - PC_GLYPH_INK2) // 2
     right = ((NP_ICONS_END - NP_ICON) * 2 + PC_MORE_INK2 - PC_GLYPH_INK2) // 2
-    return [(x, PC_SIDE_DROP + (PC_ART - PC_BTN) * row // 2) for x in (left, right) for row in range(3)]
+    size, _, end = PC_INK_ROWS['navbar_return']
+    bottom = (NP_TOP - size) // 2 + end  # the row past Return's ink, in the window
+    tops = []  # each left glyph's first ink row, in the window
+    for image in PC_IMAGES[:3]:
+        size, first, end = pc_ink_rows(image)
+        tops.append(bottom + PC_GAP)
+        bottom = tops[-1] + end - first
+    frame = lambda image, top: top - pc_ink_rows(image)[1] - (PC_BTN - pc_ink_rows(image)[0]) // 2 - PC_TOP
+    ys = [frame(image, top) for image, top in zip(PC_IMAGES[:3], tops)]
+    star, air = pc_ink_rows(PC_IMAGES[0]), pc_ink_rows(PC_IMAGES[3])
+    ys_right = [frame(PC_IMAGES[3], tops[0] + (star[2] - star[1]) - (air[2] - air[1])), *ys[1:]]
+    return [(left, y) for y in ys] + [(right, y) for y in ys_right]
 
 
 # The full-screen art (a tap on Now Playing's opens it, any tap closes it): stock's art, shade and

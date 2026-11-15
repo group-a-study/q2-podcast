@@ -286,6 +286,9 @@ int csv_toggle(char *list, unsigned size, const char *item);
 void *bottom_caption(void *parent, int h);
 int text_differs(void *w, const char *s);
 long file_size(const char *path); /* coverflow.c: -1 when it can't be opened */
+/* coverflow.c: a show's cover by its folder for Q2 Podcast's Queue rows, and its thread's poll */
+const char *coverflow_folder_art(const char *track, char *out);
+unsigned coverflow_folder_art_poll(void);
 int picture_size(const char *path, int *w, int *h); /* coverflow.c */
 void *read_all(const char *path, unsigned max, unsigned *size); /* scrobble.c */
 int visual(void *s, int n, int *c, int *frac);

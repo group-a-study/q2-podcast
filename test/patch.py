@@ -20486,6 +20486,10 @@ DESC='/mnt/mmc/Podcasts/Show/.description/2024-01-01 - Ep.txt'
 m=PagesMachine({DESC:'Hello.\n\nAn episode about 日本語.'.encode()},path=PODCAST); m.np()
 assert m.names()==['view_album','view_pc_desc','view_pc_queue','view_info'] and m.nodes[m.dots]['max']==4
 pc_poll(m); assert m.texts_in(m.scroll('view_pc_desc'))==['Hello.\n\nAn episode about 日本語.']
+# Out of the front, Description goes back to its top, and so does the end a pointer abort scrolls back to (the
+# user's, 2026-11-15: as a swipe brought it in, it jumped down to where a drag had left it, then back up)
+dv=m.scroll('view_pc_desc'); m.word(dv+O['SCROLL_Y'],80); m.word(dv+O['VIEW_YEND'],80)
+pc_poll(m); assert (m.get(dv+O['SCROLL_Y']),m.get(dv+O['VIEW_YEND']),m.get(dv+O['VIEW_XEND']))==(0,0,0); passed()
 assert m.nodes[m.chapters]['children'] and m.get(m.chapters+O['W_PARENT'])==m.shelf  # still being read: no page yet
 m.advance(O['PC_HOLD_MS']*3); pc_poll(m); assert [c[0] for c in m.calls if c[0]=='chapters_start']==['chapters_start']
 m.advance(500); pc_poll(m)
@@ -20499,14 +20503,15 @@ for name,want in (('img_pc_fwd',('player_seek_time',100)),('img_pc_back',('playe
                   ('img_pc_chapnext',('player_seek_time',120)),('img_pc_chapprev',('player_seek_time',60))):
     m.click(m.named(name)); assert jumps(m)==[want],(name,jumps(m)); passed()
 # A transcript (q2-pocket's timed .lrc beside the episode) reads as Description does: paragraphs, a new one after a
-# sentence's end 45 s on, the one being spoken (70 s: the second) white; its page last, a dot more.
+# sentence's end 45 s on, every one white (the user's, 2026-11-15: all lit, not only the one being spoken); its page
+# last, a dot more.
 LRC='/mnt/mmc/Podcasts/Show/2024-01-01 - Ep.lrc'
 m=PagesMachine({LRC:b'[00:00.00]Hello there.\n[00:20.00]Still the first one.\n[00:50.00]Second part.\n[01:40.00]Third.\n'},path=PODCAST)
 m.np(); pc_poll(m)
 assert m.names()==['view_album','view_pc_desc','view_pc_queue','view_info','view_pc_transcript'] and m.nodes[m.dots]['max']==5,(m.names(),m.nodes[m.dots].get('max'))
 paras=m.nodes[m.scroll('view_pc_transcript')]['children']
 assert [m.nodes[p].get('text') for p in paras]==['Hello there. Still the first one.','Second part.','Third.']
-assert [m.nodes[p]['style:normal:text_color'] for p in paras]==[-0x555556,-1,-0x555556]; passed()
+assert [m.nodes[p]['style:normal:text_color'] for p in paras]==[-1,-1,-1]; passed()
 # A song: no description, no chapters page (a chapter button goes to the next track), no transcript
 m=PagesMachine(path='/mnt/mmc/Music/Song.mp3'); m.np(); pc_poll(m); m.advance(3000); pc_poll(m)
 assert m.texts_in(m.scroll('view_pc_desc'))==['No description'] and not any(c[0]=='chapters_start' for c in m.calls)
