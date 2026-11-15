@@ -15988,7 +15988,7 @@ passed()
 CAPS='/tmp/q2-addon.caps'
 m=AppMachine(); stream_rows(m); caps=bytes(m.files[CAPS])
 assert caps.endswith(b'\n') and caps.count(b'\n')==1,caps
-assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'places'},caps
+assert set(caps.split())=={b'playlist',b'progress',b'pages',b'library',b'goto',b'sleep',b'game',b'audio',b'sections',b'art',b'window',b'urls',b'sort',b'places',b'recut'},caps
 m.files[CAPS]=bytearray(b'stale\n'); stream_rows(m); assert m.files[CAPS]==caps; passed()
 # Classic, Home's Split: the Streaming row slides Streaming's rows in, as the Library's: the page's own constructor fills the
 # list, what it sets on a window goes again, every row (stock's 70 px Tidal row and the added ones) takes Home's width and height,
@@ -18274,9 +18274,10 @@ assert texts()==['Crossfade: Off','Resume Songs: 30 min','Mono Audio','Swap L/R'
 # Library & Folders: its row opens stock's page again as the sub-page, stock's two rows kept, ours built.
 assert click(5)==[] and m.opened[-1]==('playset/playset_page',None) and m.get(payload_syms['playset_sub'])==0
 m,rows,texts,icons,click=settings_page('audioset','scroll_view_playset',stock_rows=15,sub=1)
-assert len(rows)==4 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump']
-assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card']
-assert [(m.entries+rows).index(c) for c in m.nodes[m.settings_view]['children']]==[16,17,15,18,14,13]
+# Q2 Podcast's Episodes order (podcast.c, the user's, 2026-11-16) after Year Order
+assert len(rows)==5 and icons==['playset_covermode','playset_folderjump','playset_covermode','playset_folderjump','playset_covermode']
+assert texts()==['Year Order: Newest First','Artists: Artist','Artist Album Order: Year','Folder Root: Card','Episodes: Newest First']
+assert [(m.entries+rows).index(c) for c in m.nodes[m.settings_view]['children']]==[16,17,15,19,18,14,13]
 assert click(2)==[(1,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: A–Z'
 assert click(2)==[(0,'Q2POD','ARTISTAZ')] and texts()[2]=='Artist Album Order: Year'
 assert click(0)==[(1,'Q2POD','YEAROLD')] and texts()[0]=='Year Order: Oldest First'
