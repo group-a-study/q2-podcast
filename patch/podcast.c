@@ -36,7 +36,7 @@
 #define Q_ROW_H 56
 #define Q_ART 44
 #define Q_TEXT_X (PAGE_X + Q_ART + 10)
-#define MORE_W 48 /* a row's ⋯ (play_more), at its end */
+#define MORE_W 48 /* a Queue row's ⋮ (play_qmore), at its end */
 #define POLL_MS 500
 #define DESC_TOP 12       /* tools/ipod.py PC_DESC_TOP: Description's and Transcript's first line */
 #define TEXT_ROW_PX 20    /* a wheel tick's worth on Description and Transcript (the lyrics' row) */
@@ -107,6 +107,10 @@ static struct {
     void *front;                     /* the page in front at the last look, since front_at */
     unsigned front_at;
     int desc_moved; /* Description scrolled since it came in front */
+    /* podcast_recut's restart: the second it goes on from once the new copy plays (since recut_at),
+     * and whether it pauses then */
+    int recut, recut_to, recut_pause;
+    unsigned recut_at;
 } pc;
 
 /* The local track playing or paused, else 0. */
@@ -147,6 +151,18 @@ static int chapter_at(int sec) {
     return i;
 }
 
+/* Past the last chapter, the next episode in Up Next plays and this one goes first in Up Next
+ * (playback_play_swap; the user's, 2026-11-16: it went to the queue's end); 0 when the queue
+ * can't (nothing after it, a queue not ours), and the next track plays as stock's Next has it. */
+static int next_swap(void) {
+    unsigned next[1];
+    int start = playback_queue_rows(next, 1) ? playback_play_swap(next[0]) : -1;
+    if (start < 0) return 0;
+    press_stamp();
+    player_start_queue(start);
+    return 1;
+}
+
 /* A hold: the next chapter, or this one's start (the one before within CHAPTER_BACK_S of it); with
  * none, past the first or the last, the next or previous track, as the button's press is elsewhere.
  */
@@ -162,6 +178,7 @@ static void chapter_jump(int dir) {
             return;
         }
     }
+    if (dir > 0 && next_swap()) return;
     dir > 0 ? player_next_music() : player_prev_music();
 }
 
@@ -633,7 +650,7 @@ static const char *ep_show(void *r, char *buf, unsigned size) {
  * (coverflow_folder_art, made on its own thread for a show Cover Flow hasn't drawn: the page is
  * built again once a run of them ends, podcast_poll), else stock's disc. */
 extern const char *coverflow_art_url(const char *artist, const char *album, char *out);
-void up_next_again(void);     /* upnext.c */
+void up_next_again(void), up_next_played(void); /* upnext.c */
 unsigned queue_hash(void *q); /* navigation.c */
 static const char *ep_art(void *r, char *out) {
     ep_t *e = ep_of(r);
@@ -970,6 +987,10 @@ void podcast_attach(void *win) {
     pc.desc_page = widget_lookup(win, "view_pc_desc", 1);
     pc.desc_view = widget_lookup(win, "view_pc_desc_scroll", 1);
     pc.desc_text = widget_lookup(win, "label_pc_desc", 1);
+    /* not a touch's target: the slide_view keeps a page's last target and focuses it again when
+     * the page comes back, and a focused label is scrolled into view, to its foot (the user's,
+     * 2026-11-16: scrolled, swiped away and back, Description jumped down) */
+    if (pc.desc_text) widget_set_sensitive(pc.desc_text, 0);
     pc.ch_page = widget_lookup(win, "view_pc_chapters", 1);
     pc.ch_view = widget_lookup(win, "view_pc_chapters_scroll", 1);
     pc.q_page = widget_lookup(win, "view_pc_queue", 1);
@@ -1142,16 +1163,19 @@ static void desc_show(void) {
 }
 
 /* Description starts at its top whenever it comes in front (the user's, 2026-11-15: a swipe's
- * drag, or the last visit, left it further down): out of the front it goes back there, and for
- * ARRIVE_MS after it comes in, unless the wheel or a finger has moved it since. */
+ * drag, or the last visit, left it further down): out of the front it goes back there at once; for
+ * ARRIVE_MS after it comes in, anything that moved it since glides back up, as Transcript glides to
+ * its paragraph (the user's, 2026-11-16: it jumped down and back), unless the wheel or a finger has
+ * moved it since. */
 static void desc_top(void *front, unsigned now) {
     void *v = pc.desc_view;
     if (!v) return;
     if (front == pc.desc_page && pointer_down() && now - pc.front_at > 100) pc.desc_moved = 1;
-    if (!I(v, SCROLL_Y) ||
-        (front == pc.desc_page && (pc.desc_moved || now - pc.front_at > ARRIVE_MS)))
-        return;
-    view_at(v, 0);
+    if (!I(v, SCROLL_Y)) return;
+    if (front != pc.desc_page)
+        view_at(v, 0);
+    else if (!pc.desc_moved && now - pc.front_at <= ARRIVE_MS && !(gl.on && gl.view == v && !gl.to))
+        glide_to(v, 0);
 }
 
 /* ---- Transcript ---- */
@@ -1301,9 +1325,9 @@ static void transcript_poll(void *r, void *front, unsigned now) {
 
 /* An episode's row (the user's, 2026-11-15, as Library's Episodes): the show's art, the title over
  * the show, h high and w wide at y in view; the playing one (lead 0) says so, and an Up Next row
- * has a ⋯ at its end (1.8.4, where its arrows were), which opens its menu (podcast_row_menu). The ⋯
- * is drawn in the row, not a widget of its own (a list's wheel would stop on it): a tap on it is
- * told by where it lands (podcast_row_more). Shared with upnext.c's View Queue. */
+ * has a ⋮ at its end (1.8.5: a tap anywhere on the row opens its menu, podcast_row_menu), drawn in
+ * the row, not a widget of its own (a list's wheel would stop on it). Shared with upnext.c's View
+ * Queue. */
 void *podcast_row(void *view, int y, int w, int h, void *r, int lead) {
     char title[256], show[160], line[200], url[600];
     void *item = list_item_create(view, 0, y, w, h);
@@ -1321,24 +1345,16 @@ void *podcast_row(void *view, int y, int w, int h, void *r, int lead) {
                          s);
     if (lead) {
         void *more = image_create(item, w - MORE_W, 0, MORE_W, h);
-        image_base_set_image(more, "play_more");
+        image_base_set_image(more, "play_qmore");
         image_set_draw_type(more, IMAGE_DRAW_CENTER);
     }
     return item;
 }
 
-/* Whether a tap on row item (EVT_CLICK) lands on its ⋯ (a Centre press's click lands on the row's
- * start). */
-int podcast_row_more(void *item, void *event) {
-    if (!item || !event) return 0;
-    int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) }, w = I(item, W_W);
-    widget_to_local(item, xy);
-    return xy[0] >= w - MORE_W && xy[0] < w;
-}
+/* ---- A Queue row's menu (the user's, 2026-11-15: a ⋯ instead of the arrows; 2026-11-16: a tap on
+ * the row opens it, Play Now first) ---- */
 
-/* ---- A Queue row's menu (the user's, 2026-11-15: a ⋯ instead of the arrows) ---- */
-
-enum { QR_UP, QR_DOWN, QR_TOP, QR_BOTTOM, QR_DELFIN, QR_DELETE, QR_REMOVE, QR_N };
+enum { QR_PLAY, QR_UP, QR_DOWN, QR_TOP, QR_BOTTOM, QR_DELFIN, QR_DELETE, QR_REMOVE, QR_N };
 static struct {
     void *page;
     unsigned at;   /* its episode's queue row as it opened */
@@ -1368,9 +1384,10 @@ static int qr_place(unsigned at, unsigned *n) {
     return -1;
 }
 
-/* The pick, off the menu's own dispatch (the menu gone): moves go through playback.c, Delete When
- * Finished turns over, Delete Episode asks first (podcast_delete), Remove from Queue takes the row
- * out (playback_drop); then both Queue pages are built again. */
+/* The pick, off the menu's own dispatch (the menu gone): Play Now plays the episode and the one
+ * playing goes first in Up Next (playback_play_swap), as Pocket Casts' Up Next does; moves go
+ * through playback.c, Delete When Finished turns over, Delete Episode asks first (podcast_delete),
+ * Remove from Queue takes the row out (playback_drop); then both Queue pages are built again. */
 static int qr_run(const void *unused) {
     (void)unused;
     unsigned n = 0;
@@ -1381,6 +1398,14 @@ static int qr_run(const void *unused) {
         say = "Queue changed";
     else
         switch (qr.what) {
+        case QR_PLAY: {
+            int start = playback_play_swap((unsigned)at);
+            if (start < 0) start = at; /* a queue not ours to reorder: stock's pick */
+            press_stamp();
+            player_start_queue(start);
+            up_next_played();
+            return 0;
+        }
         case QR_UP:
             say = !k                            ? "It's next already"
                   : playback_raise((unsigned)k) ? 0
@@ -1427,7 +1452,7 @@ static int qr_pick(void *ctx, void *event) {
     return 0; /* a STOP would keep the list's grab */
 }
 
-/* A Queue row's ⋯ (Now Playing's Queue page, View Queue): the menu of the queue's row at, titled
+/* A Queue row's tap (Now Playing's Queue page, View Queue): the menu of the queue's row at, titled
  * with its episode's title. */
 void podcast_row_menu(unsigned at) {
     void *q = P(mcl_pdeqplaylist, 0), *r = q && at < deque_size(q) ? deque_at(q, at) : 0;
@@ -1435,9 +1460,9 @@ void podcast_row_menu(unsigned at) {
     if (!r || qr.page || !(qr.page = page_open("pcqueue_menu", qr_closed, page_keyup))) return;
     qr.at = at, qr.hash = queue_hash(q);
     void *view = page_list(qr.page, qr.page, 0, ep_title(r, title, sizeof title), QR_N, 48);
-    static const char *const rows[QR_N] = { "Move Up",          "Move Down", "Move to Top",
-                                            "Move to Bottom",   0,           "Delete Episode",
-                                            "Remove from Queue" };
+    static const char *const rows[QR_N] = { "Play Now",       "Move Up",          "Move Down",
+                                            "Move to Top",    "Move to Bottom",   0,
+                                            "Delete Episode", "Remove from Queue" };
     for (int i = 0; i < QR_N; ++i)
         page_row_detail(view, i,
                         rows[i]             ? rows[i]
@@ -1477,26 +1502,17 @@ static void *queue_lead(void) {
     return queue_now(&at, &n);
 }
 
-/* The Queue page's tap on a row (ctx: its place, 0 the playing one): its ⋯ opens its menu
- * (podcast_row_menu); elsewhere on an Up Next row that episode plays and the one playing goes first
- * in Up Next (playback_play_swap), as Pocket Casts' Up Next does; on the playing one, back to the
- * art. */
+/* The Queue page's tap on a row (ctx: its place, 0 the playing one): an Up Next row's opens its
+ * menu (podcast_row_menu: Play Now first; the user's, 2026-11-16: a tap no longer plays it); the
+ * playing one's goes back to the art. */
 static int queue_tap(void *ctx, void *event) {
-    int k = (int)(long)ctx, more = k && event ? podcast_row_more(P(event, EVENT_TARGET), event) : 0;
-    void *q = P(mcl_pdeqplaylist, 0);
+    int k = (int)(long)ctx;
+    (void)event;
     if (!k) {
         if (pc.slide) widget_set_prop_int(pc.slide, "value", 0);
         return 0;
     }
-    if (k < 0 || (unsigned)k > pc.q_n || !q) return 0;
-    if (more)
-        podcast_row_menu(pc.q_idx[k - 1]);
-    else {
-        int at = playback_play_swap(pc.q_idx[k - 1]);
-        if (at < 0 && pc.q_idx[k - 1] != (unsigned)MCL(MCL_POS) && pc.q_idx[k - 1] < deque_size(q))
-            at = (int)pc.q_idx[k - 1]; /* a queue not ours to reorder: stock's pick */
-        if (at >= 0) press_stamp(), player_start_queue(at);
-    }
+    if (k > 0 && (unsigned)k <= pc.q_n && P(mcl_pdeqplaylist, 0)) podcast_row_menu(pc.q_idx[k - 1]);
     pc.q_sig = 0; /* shown again */
     return 0;     /* a STOP would keep the slide_view's grab (rate_fav_click) */
 }
@@ -1650,6 +1666,49 @@ static void pages_poll(void *r, unsigned now) {
     transcript_poll(r, front, now);
 }
 
+/* ---- Remove Ads Again on the episode playing (the user's, 2026-11-16) ---- */
+
+#define RECUT_WAIT_MS 10000 /* the restarted copy has this long to play before its seek is let go  \
+                             */
+#define RECUT_SETTLE_MS 300 /* and plays this long first, so the player has its new file */
+
+/* q2-pocket put a new copy of the episode at path in place, n cuts its seconds [from, to) of the
+ * old copy left out (addon.c recut_read): the player still read the old copy, sponsor reads and
+ * all, to its end. The episode playing or paused starts again, from the new copy, at the same
+ * moment of the episode (a moment cut out: where the cut was); its chapters and transcript are read
+ * again. */
+void podcast_recut(const char *path, const int *cuts, int n) {
+    void *r = local_now();
+    const char *now = r ? P(r, REC_PATH) : 0;
+    int status = mclGetPlayStatus(), sec = now && !strcmp(now, path) ? np_second() : -1;
+    if (sec < 0 || (status != 2 && status != 3)) return;
+    int to = sec;
+    for (int i = 0; i < n; ++i) {
+        int from = cuts[2 * i], end = cuts[2 * i + 1];
+        to -= sec >= end ? end - from : sec > from ? sec - from : 0;
+    }
+    pc.recut_to = to < 0 ? 0 : to;
+    pc.recut_pause = status == 3;
+    pc.recut_at = (unsigned)time_now_ms();
+    pc.recut = 1;
+    pc.seen = 0, tr.track = ~0u; /* chapters and transcript: the new copy's */
+    press_stamp();
+    player_start_queue((int)MCL(MCL_POS));
+}
+
+/* Once the restarted copy plays: on to its place, paused again if it was. */
+static void recut_poll(unsigned now) {
+    if (!pc.recut) return;
+    if (now - pc.recut_at > RECUT_WAIT_MS) {
+        pc.recut = 0;
+        return;
+    }
+    if (now - pc.recut_at < RECUT_SETTLE_MS || mclGetPlayStatus() != 2 || np_second() < 0) return;
+    pc.recut = 0;
+    np_seek(pc.recut_to);
+    if (pc.recut_pause) player_play_pause();
+}
+
 /* Every UI pass (ringnav_sleep): the chapters' reader, the playing track's title and the star, the
  * wheel's glide, then every POLL_MS the track: another one's description and, once a spoken one has
  * played CHAPTER_DELAY_MS, its chapters; whether the last one finished; and the pages. */
@@ -1690,6 +1749,7 @@ void podcast_poll(void) {
     if (runs != pc.art_runs) pc.art_runs = runs, pc.q_sig = 0, up_next_again();
     void *r = queue_now(&at, &n);
     track_check(r, now);
+    recut_poll(now);
     finish_poll();
     /* read for Now Playing's page once the track has played a moment, or at once for a hold */
     if (r && pc.state == CH_NONE && !pc.reading &&
@@ -1728,6 +1788,51 @@ static void skip_rows(void *view) {
         widget_set_text_utf8(label, text);
         widget_on(P(label, W_PARENT), EVT_CLICK, skip_row_tap, label);
     }
+}
+
+/* ---- Library → Episodes' order (the user's, 2026-11-16) ---- */
+
+/* Q2POD EPORDER: newest first (stock's Recently Added order), the titles A to Z or Z to A, or by
+ * podcast (its album, else its path) A to Z or Z to A, a podcast's episodes newest first.
+ * navigation.c's library_query orders Episodes' query by episode_order_sql. An untagged episode
+ * goes by its file name, as its row reads. */
+static const char *const EP_ORDERS[] = { "Newest First", "Title A–Z", "Title Z–A", "Podcast A–Z",
+                                         "Podcast Z–A" };
+#define EP_ORDER_N (int)(sizeof EP_ORDERS / sizeof *EP_ORDERS)
+#define EP_TITLE "ifnull(nullif(name,''),filename) collate nocase"
+#define EP_SHOW "ifnull(nullif(album,''),fileurl) collate nocase"
+static const char *const EP_ORDER_SQL[EP_ORDER_N] = {
+    "time_create desc", EP_TITLE ", time_create desc, id", EP_TITLE " desc, time_create desc, id",
+    EP_SHOW ", time_create desc, id", EP_SHOW " desc, time_create desc, id"
+};
+
+static int ep_order(void) { return config_value("Q2POD", "EPORDER", EP_ORDER_N, 0); }
+
+/* Episodes' ORDER BY. */
+const char *episode_order_sql(void) { return EP_ORDER_SQL[ep_order()]; }
+
+static void ep_order_text(void *label) {
+    char text[48];
+    tk_snprintf(text, sizeof text, "Episodes: %s", EP_ORDERS[ep_order()]);
+    widget_set_text_utf8(label, text);
+}
+
+/* Centre or tap (ctx: its label): the next order, kept; Episodes opens in it from its next visit.
+ */
+static int ep_order_tap(void *ctx, void *event) {
+    (void)event;
+    write_int_config((ep_order() + 1) % EP_ORDER_N, "Q2POD", "EPORDER");
+    ep_order_text(ctx);
+    return 0;
+}
+
+/* Playback's Library & Folders (navigation.c ringnav_audioset): the Episodes order row, last. */
+void podcast_library_rows(void *view) {
+    void *label = list_row(view, "playset_covermode", 0, 0);
+    widget_use_style(label, "s_scrlabel_white20l");
+    widget_resize(label, 253, I(label, W_H));
+    ep_order_text(label);
+    widget_on(P(label, W_PARENT), EVT_CLICK, ep_order_tap, label);
 }
 
 /* The ⋯ page's Queue row: Q2 Podcast's View Queue (upnext.c), the episodes as Now Playing's Queue

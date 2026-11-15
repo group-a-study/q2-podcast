@@ -86,7 +86,8 @@
 #define CAPS_FILE "/tmp/q2-addon.caps"
 /* This firmware's card-app features, space-separated; a feature adds its word. */
 #define ADDON_CAPS                                                                                 \
-    "playlist progress pages library goto sleep game audio sections art window urls sort places"
+    "playlist progress pages library goto sleep game audio sections art window urls sort places "  \
+    "recut"
 #define PLACES_MAX 4096 /* an app's .places read this far: some dozen songs' places */
 #define ADDON_SECTIONS 8  /* sections an app's first page may have */
 #define SWIPE_CLAIM_PX 24 /* a sideways move this far, twice as far as up or down, is a swipe's */
@@ -640,6 +641,39 @@ static void places_read(app_t *a) {
     unlink(path);
 }
 
+/* An app's .recut (q2-pocket's Remove Ads Again): a new copy of a song on the card is in place,
+ * cut; its path on the first line, then "<from>\t<to>", seconds of the old copy it cut, a line
+ * each, in order. podcast.c podcast_recut moves the player to the same moment in the new copy when
+ * that song plays; then the file is removed. A line with no newline after it is passed over. */
+#define RECUT_MAX 64 /* cuts read */
+static void recut_read(app_t *a) {
+    char path[48];
+    tk_snprintf(path, sizeof path, "/tmp/q2-%s.recut", a->id);
+    if (access(path, 0)) return;
+    char *raw = calloc(1, PLACES_MAX + 2), *song = 0;
+    int cuts[2 * RECUT_MAX], n = 0;
+    if (raw && state_read(path, raw, PLACES_MAX + 2))
+        for (char *line = raw + 1, *end; (end = strstr(line, "\n")); line = end + 1) {
+            *end = 0;
+            if (!song) {
+                song = card_path(line) ? line : raw; /* raw: not a card's, nothing done */
+                continue;
+            }
+            char *tab = strstr(line, "\t");
+            int v[2] = { 0, 0 }, ok = tab && n < RECUT_MAX;
+            for (int k = 0; ok && k < 2; ++k) {
+                const char *d = k ? tab + 1 : line, *stop = k ? end : tab;
+                ok = d < stop && stop - d <= 7;
+                for (; ok && d < stop; ++d)
+                    ok = *d >= '0' && *d <= '9', v[k] = v[k] * 10 + (*d - '0');
+            }
+            if (ok && v[1] > v[0]) cuts[2 * n] = v[0], cuts[2 * n + 1] = v[1], ++n;
+        }
+    if (song && song != raw) podcast_recut(song, cuts, n);
+    free(raw);
+    unlink(path);
+}
+
 /* ringnav_sleep, every UI loop pass, paced to ADDON_POLL_MS once its row started it: standby and
  * auto power-off held while the app asks (hold=1), as Spotify's poll does while it plays; the
  * screen still turns off. An app that stopped by itself (idle, or from the phone) is let go, and
@@ -667,6 +701,7 @@ static void poll_one(app_t *a) {
     stream_poll(a);
     sleep_read(a);
     places_read(a);
+    recut_read(a);
     if (access(a->pid, 0) && now - a->launch_at > ADDON_START_MS) a->launched = a->hold = 0;
 }
 

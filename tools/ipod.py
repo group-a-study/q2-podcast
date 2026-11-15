@@ -931,7 +931,8 @@ PC_IMAGES = ('play_unfav', 'play_back5', 'play_chapprev', 'airplay', 'play_fwd30
 PC_RETURN_INK2, PC_MORE_INK2, PC_GLYPH_INK2 = 13 + 24, 11 * 2 + 2 + 25, 11 * 2 + 3 + 24
 # Down the columns (the user's, 2026-11-15, 1.8.3): PC_GAP between one glyph's ink and the next's, Return's chevron to
 # the star, the star to skip back and skip back to the previous chapter, the gap the star and skip back had in 1.8.2;
-# the right column's rows level with the left's, so AirPlay's ink ends where the star's does. Each glyph's ink rows
+# the right column's rows level with the left's, each pair's ink on one centre (the user's, 2026-11-16: the star with
+# AirPlay, skip back with skip on, the chapters' pair). Each glyph's ink rows
 # (image height, first row, the row past the last; test/build.py measures the shipped images): Return's chevron, drawn
 # centred in the top row's NP_TOP, the star, the skip glyphs (every length's), the chapter glyphs and AirPlay's.
 PC_GAP = 34
@@ -946,7 +947,8 @@ def pc_ink_rows(image):
 
 def pc_frames():
     """The side buttons' frames' x, y on the first page, in PC_SIDE's order: the left column centred on Return's
-    chevron, the right on More's dots, their glyphs' ink PC_GAP apart down from Return's, the rows level."""
+    chevron, the right on More's dots, their glyphs' ink PC_GAP apart down from Return's, each row's two inks on one
+    centre."""
     left = ((375 - NP_ICONS_END) * 2 + PC_RETURN_INK2 - PC_GLYPH_INK2) // 2
     right = ((NP_ICONS_END - NP_ICON) * 2 + PC_MORE_INK2 - PC_GLYPH_INK2) // 2
     size, _, end = PC_INK_ROWS['navbar_return']
@@ -959,7 +961,7 @@ def pc_frames():
     frame = lambda image, top: top - pc_ink_rows(image)[1] - (PC_BTN - pc_ink_rows(image)[0]) // 2 - PC_TOP
     ys = [frame(image, top) for image, top in zip(PC_IMAGES[:3], tops)]
     star, air = pc_ink_rows(PC_IMAGES[0]), pc_ink_rows(PC_IMAGES[3])
-    ys_right = [frame(PC_IMAGES[3], tops[0] + (star[2] - star[1]) - (air[2] - air[1])), *ys[1:]]
+    ys_right = [frame(PC_IMAGES[3], tops[0] + ((star[2] - star[1]) - (air[2] - air[1])) // 2), *ys[1:]]
     return [(left, y) for y in ys] + [(right, y) for y in ys_right]
 
 
@@ -1228,7 +1230,7 @@ STAR_ICONS = {'play_fav.png': 'play_star.png', 'play_unfav.png': 'play_unstar.pn
 # The skip buttons have a glyph for each length the user can choose (podcast.c SKIPS), the seconds in the ring.
 PC_SKIPS = (5, 10, 15, 30, 45, 60)
 PC_ICONS = (*(f'play_{kind}{s}.png' for kind in ('back', 'fwd') for s in PC_SKIPS), 'play_chapprev.png',
-            'play_chapnext.png', 'play_qup.png', 'play_qdown.png')  # the Queue page's arrows last
+            'play_chapnext.png', 'play_qmore.png')  # the Queue rows' ⋮ last
 
 
 def quiet_icon(name, data):

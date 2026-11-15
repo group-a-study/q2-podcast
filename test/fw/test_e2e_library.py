@@ -1005,7 +1005,9 @@ def test_a_pick_from_up_next_plays_it_and_previous_gives_back_what_it_jumped(q2)
     rows = up_next_rows(q, view)
     page = q.pages[-1]
     assert len(rows) == 6
-    tap_row(q, view, rows[2][0])  # the third: two jumped
+    tap_row(q, view, rows[2][0])  # the third (two jumped): its menu
+    q.tap('Play Now')
+    q.run_timers()  # once the menu has gone
     assert title_of(q, q.opened[-1]) == rows[2][0] and page not in q.pages  # it plays, and Up Next closes
     q.play_for(3)
     q.previous_key()  # 3 s in: back to the track the pick left

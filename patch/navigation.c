@@ -136,6 +136,15 @@ static int library_query(int content, const char *db, const char *sql, void *row
             return -1;
         sql = aa;
     }
+    /* Q2 Podcast's Episodes (Recently Added's query, getAllRecentAddRecord, LIBRARY_PODCASTS):
+     * every episode, not the newest 100, in the order Library & Folders sets (podcast.c
+     * episode_order_sql; the user's, 2026-11-16) */
+    static const char newest[] = " ORDER BY time_create desc limit 100";
+    const char *order =
+        library_music == LIBRARY_PODCASTS && sql &&
+                !strcmp(sql, "select * from songtable ORDER BY time_create desc limit 100;")
+            ? episode_order_sql()
+            : 0;
     const char *from = library_music && sql ? strstr(sql, " from songtable") : 0;
     if (from) { /* library_first: the Unknown row's check, which one song answers */
         int n = tk_snprintf(filtered, sizeof filtered,
@@ -156,6 +165,14 @@ static int library_query(int content, const char *db, const char *sql, void *row
         int n = tk_snprintf(filtered, sizeof filtered, "%s order by name collate nocase, id", sql);
         if (n < 0 || (unsigned)n >= sizeof filtered) return -1;
         sql = filtered;
+    }
+    /* Episodes' order and limit replaced; aa is free: this SQL has no albumsonger. */
+    const char *added = order ? strstr(sql, newest) : 0;
+    if (added) {
+        int n = tk_snprintf(aa, sizeof aa, "%.*s ORDER BY %s%s", (int)(added - sql), sql, order,
+                            added + sizeof newest - 1);
+        if (n < 0 || (unsigned)n >= sizeof aa) return -1;
+        sql = aa;
     }
     /* Time added (ascending) would walk songtable_time_create backwards and reverse one second's
      * songs (a CUE image's tracks): id keeps stock's order. aa is free: this SQL has no
@@ -3361,7 +3378,7 @@ static const unsigned char playset_order[] = {
 };
 /* Library & Folders: stock's Folder art and Folder skip (0, 1), then ours as built. */
 static const unsigned char library_order[] = {
-    3 /* Artists */,     4 /* Artist album order */, 2 /* Year order */,
+    3 /* Artists */,     4 /* Artist album order */, 2 /* Year order */, 6 /* Episodes order */,
     5 /* Folder Root */, 1 /* Folder skip */,        0 /* Folder art */,
 };
 /* Connections, personalisation and daily controls, then device maintenance; About stays last.
@@ -3463,6 +3480,7 @@ int ringnav_audioset(void *win, void *ctx) {
         root_read(name);
         st.root_label = list_row(view, "playset_folderjump", root_click, 0);
         root_text(name);
+        podcast_library_rows(view); /* Q2 Podcast's Episodes order (podcast.c) */
         reorder(view, library_order, sizeof library_order);
         return result;
     }

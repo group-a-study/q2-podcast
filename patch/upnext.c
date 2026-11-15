@@ -1,9 +1,9 @@
 /* View Queue (docs/internals.md#queue-menu), Q2 Podcast's (the user's, 2026-11-15): the playing
  * episode, then Up Next in the order it plays, each with its show's art, its title over its show,
- * and a ⋯ for its menu (podcast.c podcast_row, the rows of Now Playing's Queue page); the wheel
- * goes a row at a time, as every list. navigation.c's qm_run (the Play/Pause hold's View Queue) and
- * Now Playing's ⋯ page (podcast.c more_queue) open it (up_next), and ringnav_keylong hands a
- * Play/Pause hold on a row to un_hold. */
+ * and a ⋮: a row's tap opens its menu (podcast.c podcast_row, the rows of Now Playing's Queue
+ * page); the wheel goes a row at a time, as every list. navigation.c's qm_run (the Play/Pause
+ * hold's View Queue) and Now Playing's ⋯ page (podcast.c more_queue) open it (up_next), and
+ * ringnav_keylong hands a Play/Pause hold on a row to un_hold. */
 #include "offsets.inc"
 #include "peq.h"
 #include "playback.h"
@@ -13,7 +13,6 @@
 #define SEL "_ringnav_index"                               /* navigation.c's */
 unsigned queue_hash(void *q);                              /* navigation.c */
 void *podcast_row(void *view, int y, int w, int h, void *r, int lead);
-int podcast_row_more(void *item, void *event);             /* podcast.c */
 void podcast_row_menu(unsigned at);                        /* podcast.c */
 int media_owner(void);                                     /* headset.c */
 static struct {
@@ -60,14 +59,14 @@ static int un_again(const void *unused) {
     return 0;
 }
 
-/* A row's tap or Centre (ctx: the row). Its ⋯ opens its menu (podcast.c podcast_row_menu: moves,
- * Delete When Finished, Delete Episode, Remove from Queue); the playing row goes back to Now
- * Playing; another row plays its episode and the one playing goes first in Up Next
- * (playback_play_swap), as Now Playing's Queue page does, and Now Playing comes in. A queue changed
- * under the page takes the rows again and says so. */
+/* A row's tap or Centre (ctx: the row): an Up Next row's opens its menu (podcast.c
+ * podcast_row_menu: Play Now, moves, Delete When Finished, Delete Episode, Remove from Queue; the
+ * user's, 2026-11-16: a tap no longer plays it); the playing row goes back to Now Playing. A queue
+ * changed under the page takes the rows again and says so. */
 static int un_play(void *ctx, void *event) {
     unsigned row = (unsigned)(long)ctx, k = row - un.lead;
     void *q = P(mcl_pdeqplaylist, 0);
+    (void)event;
     if (un.lead && !row) {
         navigator_back();
         playback_np();
@@ -78,18 +77,17 @@ static int un_play(void *ctx, void *event) {
         if (timer_add(un_again, (void *)0, 0)) toast("Queue changed");
         return 0;
     }
-    if (event && podcast_row_more(P(event, EVENT_TARGET), event)) { /* its ⋯: its menu */
-        un.sel = (int)row;
-        podcast_row_menu(un.idx[k]);
-        return 0;
-    }
-    int at = playback_play_swap(un.idx[k]);
-    if (at < 0 && un.idx[k] != (unsigned)I(MCL_POS, 0) && un.idx[k] < deque_size(q))
-        at = (int)un.idx[k]; /* a queue not ours to reorder: stock's pick */
-    if (at >= 0) press_stamp(), player_start_queue(at);
+    un.sel = (int)row;
+    podcast_row_menu(un.idx[k]);
+    return 0;
+}
+
+/* A row's Play Now (podcast.c qr_run, its menu gone): View Queue closes and Now Playing comes in,
+ * as a row's tap did before it opened the menu. From Now Playing's own Queue page, nothing more. */
+void up_next_played(void) {
+    if (!un.page) return;
     navigator_back();
     playback_np();
-    return 0;
 }
 
 /* The page gone: the next View Queue opens a new one. */

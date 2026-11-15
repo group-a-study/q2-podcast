@@ -20415,10 +20415,13 @@ m=ChapterMachine(path=PODCAST); assert side_down(m,O['KEY_FWD_BTN'])==11
 m.advance(O['PC_HOLD_MS'],clear=False); assert [c[0] for c in jumps(m)]==['chapters_start']
 pc_poll(m); assert jumps(m)[1:]==[('player_seek_time',120)] and m.toasts[-1][3]=='日本語',jumps(m)
 assert m.call(O['KEY_FWD_BTN'],gap=0,clear=False)==11 and jumps(m)[1:]==[('player_seek_time',120)]; passed()
+# Past the last chapter, Up Next's first plays and this episode goes first in Up Next (playback_play_swap; the
+# user's, 2026-11-16: it went to the queue's end); before the first, the previous track.
 for playtime,key,want in ((70,O['KEY_BACK_BTN'],('player_seek_time',60)),(61,O['KEY_BACK_BTN'],('player_seek_time',0)),
-                          (130,O['KEY_FWD_BTN'],('player_next_music',)),(1,O['KEY_BACK_BTN'],('player_prev_music',))):
+                          (130,O['KEY_FWD_BTN'],('player_start_queue',)),(1,O['KEY_BACK_BTN'],('player_prev_music',))):
     m=ChapterMachine(path=PODCAST); m.playtime=playtime; side_down(m,key); m.advance(O['PC_HOLD_MS'],clear=False); pc_poll(m)
-    assert m.call(key,gap=0,clear=False)==11 and [j[:len(want)] for j in jumps(m) if j[0]!='chapters_start']==[want],(playtime,jumps(m)); passed()
+    moves=[(c[0],c[1]) for c in m.calls if c[0] in ('player_seek_time','mclSetSeek','player_next_music','player_prev_music','player_start_queue')]
+    assert m.call(key,gap=0,clear=False)==11 and [j[:len(want)] for j in moves]==[want],(playtime,moves); passed()
 # Held a second time: the chapters read before, at once.
 m=ChapterMachine(path=PODCAST); side(m,O['KEY_FWD_BTN'],O['PC_HOLD_MS']); pc_poll(m); m.playtime=120
 assert side(m,O['KEY_BACK_BTN'],O['PC_HOLD_MS'])==(11,11) and jumps(m)[-1]==('player_seek_time',60),jumps(m); passed()
@@ -20498,6 +20501,15 @@ pc_poll(m); assert m.texts_in(m.scroll('view_pc_desc'))==['Hello.\n\nAn episode 
 # user's, 2026-11-15: as a swipe brought it in, it jumped down to where a drag had left it, then back up)
 dv=m.scroll('view_pc_desc'); m.word(dv+O['SCROLL_Y'],80); m.word(dv+O['VIEW_YEND'],80)
 pc_poll(m); assert (m.get(dv+O['SCROLL_Y']),m.get(dv+O['VIEW_YEND']),m.get(dv+O['VIEW_XEND']))==(0,0,0); passed()
+# Its text is no touch's target: the slide_view focuses a page's last target as the page comes back, and a focused
+# label is scrolled into view, to its foot (the user's, 2026-11-16: scrolled, swiped away and back, it jumped down).
+# Anything that moves it as it comes in front glides it back up, as Transcript glides to its paragraph, not at once.
+assert m.nodes[m.desc]['sensitive']==0
+m.word(dv+O['W_PARENT'],m.named('view_pc_desc')); m.nodes[m.slide]['value']=1; pc_poll(m); m.word(dv+O['SCROLL_Y'],80); m.advance(20); pc_poll(m)
+for _ in range(2): m.advance(16); pc_poll(m)
+assert 0<m.get(dv+O['SCROLL_Y'])<80,m.get(dv+O['SCROLL_Y'])
+for _ in range(60): m.advance(16); pc_poll(m)
+assert m.get(dv+O['SCROLL_Y'])==0; m.nodes[m.slide]['value']=0; pc_poll(m); passed()
 assert m.nodes[m.chapters]['children'] and m.get(m.chapters+O['W_PARENT'])==m.shelf  # still being read: no page yet
 m.advance(O['PC_HOLD_MS']*3); pc_poll(m); assert [c[0] for c in m.calls if c[0]=='chapters_start']==['chapters_start']
 m.advance(500); pc_poll(m)

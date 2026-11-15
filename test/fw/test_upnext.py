@@ -180,13 +180,19 @@ def test_up_next_lists_what_then_plays_each_title_over_its_show(fw, up):
     assert page.captions == [title(n) for n in queue.played(len(NAMES) - 1)]
 
 
-def test_a_tapped_row_plays_its_own_track_and_the_page_closes(fw, up):
+def test_a_tapped_row_opens_its_menu_whose_play_now_plays_it(fw, up):
+    """A row's tap opens its menu, titled with its episode (the user's, 2026-11-16: a tap no longer plays it); Play Now,
+    first, plays it, from the next loop pass, once the menu has gone."""
     queue, page = up
+    queue.mcl.type = 0xf001  # a library queue: a local one, which Play Now reorders
     page.open()
     caption = page.captions[3]
-    assert page.tap(3) == 0
+    assert page.tap(3) == 0 and not fw.calls('player_start_queue')
+    assert caption in page.said and page.captions[0] == 'Play Now'
+    assert page.tap(0) == 0 and fw.calls('navigator_back')
+    page.run()
     (at, *_), = [a for _, a in fw.calls('player_start_queue')]
-    assert title(queue.name(at)) == caption and fw.calls('navigator_back')
+    assert title(queue.name(at)) == caption
 
 
 def test_a_hold_makes_its_row_s_track_play_next_and_takes_the_rows_again_with_it_first(fw, up):
@@ -271,9 +277,10 @@ def test_a_closed_page_lets_view_queue_open_a_new_one(fw, up):
 
 
 def test_a_row_s_menu_moves_its_episode_and_takes_it_out_of_the_queue(fw, up):
-    """A Queue row's ⋯ (the user's, 2026-11-15, where its arrows were): its menu, titled with its episode, has Move Up,
-    Move Down, Move to Top, Move to Bottom, Delete When Finished, Delete Episode and Remove from Queue; a pick closes
-    it and runs from the next loop pass, on the row it opened for; then the queue's pages are taken again."""
+    """A Queue row's menu (the user's, 2026-11-15, where its arrows were; 2026-11-16, Play Now first): titled with its
+    episode, it has Play Now, Move Up, Move Down, Move to Top, Move to Bottom, Delete When Finished, Delete Episode and
+    Remove from Queue; a pick closes it and runs from the next loop pass, on the row it opened for; then the queue's
+    pages are taken again."""
     queue, page = up
     queue.mcl.type = 0xf001  # a library queue: a local one, which the moves reorder
     page.open()
@@ -286,7 +293,7 @@ def test_a_row_s_menu_moves_its_episode_and_takes_it_out_of_the_queue(fw, up):
         upnext()
         at, name = out[k], title(queue.name(out[k]))
         menu(at)
-        assert name in page.said and page.captions == ['Move Up', 'Move Down', 'Move to Top', 'Move to Bottom',
+        assert name in page.said and page.captions == ['Play Now', 'Move Up', 'Move Down', 'Move to Top', 'Move to Bottom',
                                                        'Delete When Finished: Off', 'Delete Episode', 'Remove from Queue']
         assert page.tap(row) == 0 and fw.calls('navigator_back')
         page.run()
@@ -294,15 +301,15 @@ def test_a_row_s_menu_moves_its_episode_and_takes_it_out_of_the_queue(fw, up):
         return name
 
     before = upnext()
-    moved = pick(2, 0)  # Move Up: the third goes second
+    moved = pick(2, 1)  # Move Up: the third goes second
     assert upnext()[:3] == [before[0], moved, before[1]]
     at = out[1]
-    pick(1, 6)  # Remove from Queue: stock's own row delete (a stub here) on its row
+    pick(1, 7)  # Remove from Queue: stock's own row delete (a stub here) on its row
     assert [a[1] for _, a in fw.calls('toolsClearDeqItem')] == [at] and page.toasts[-1] == 'Removed from the queue'
-    pick(0, 0)  # Move Up on the first: it says so
+    pick(0, 1)  # Move Up on the first: it says so
     assert page.toasts[-1] == "It's next already"
     menu(out[0])
     queue.mcl.pos = out[0]  # it plays now: the menu's row isn't Up Next's any more
-    page.tap(2)
+    page.tap(3)
     page.run()
     assert page.toasts[-1] == 'Queue changed'

@@ -945,6 +945,62 @@ def test_a_finished_episode_leaves_the_queue(fw, player):
     assert len(fw.calls('toolsClearDeqItem')) == 1
 
 
+def test_next_chapter_past_the_last_plays_the_next_episode_and_keeps_this_one_next(fw, player):
+    """The next chapter, by button or hold, with none after the playing one (the user's, 2026-11-16: the episode went
+    to the queue's end): Up Next's first plays and the one playing goes first in Up Next, as a Queue pick has it; a
+    queue the payload can't reorder keeps stock's Next."""
+    jump = fw.fn('podcast__chapter_jump', None, C.c_int)
+    player.mcl.type = LIBRARY
+    player.load([player.song(b'/mnt/mmc/Podcasts/Show/%d.mp3' % i, b'Show', track=i + 1) for i in range(4)], pos=1)
+    paths = [path_at(player, i) for i in range(4)]
+    fw.mock('player_playtime_and_length', lambda *_: -1)
+    fw.mock('mclGetPlayStatus', lambda *_: 2)
+    jump(1)
+    assert path_at(player, player.mcl.pos) == paths[2] and path_at(player, player.mcl.pos + 1) == paths[1]
+    assert len(fw.calls('player_start_queue')) == 1 and not fw.calls('player_next_music')
+    player.mcl.type = 0  # not a local queue
+    jump(1)
+    assert len(fw.calls('player_next_music')) == 1 and len(fw.calls('player_start_queue')) == 1
+
+
+def test_a_new_copy_of_the_episode_playing_goes_on_at_the_same_moment(fw, player):
+    """q2-pocket's Remove Ads Again on the episode playing (addon.c's .recut; the user's, 2026-11-16: the player read
+    the old copy on, sponsor reads and all): it starts again and, once it plays, goes to the same moment of the new
+    copy, the cuts before it taken off (inside one: where it was); paused, it pauses again; another file, or a
+    stopped player, changes nothing."""
+    recut = fw.fn('podcast_recut', None, C.c_char_p, C.POINTER(C.c_int), C.c_int)
+    poll = fw.fn('podcast__recut_poll', None, C.c_uint)
+    player.mcl.type = LIBRARY
+    player.load([player.song(b'/mnt/mmc/Podcasts/Show/%d.mp3' % i, b'Show', track=i + 1) for i in range(3)], pos=1)
+    sec, status, now = [1500], [2], [5000]
+
+    def playtime(at, total, *_):
+        C.c_int.from_address(at).value, C.c_int.from_address(total).value = sec[0], 9000
+        return 0
+    fw.mock('player_playtime_and_length', playtime)
+    fw.mock('mclGetPlayStatus', lambda *_: status[0])
+    fw.mock('time_now_ms', lambda *_: now[0])
+    cuts = (C.c_int * 6)(100, 160, 1055, 1241, 4000, 4100)
+    recut(path_at(player, 0), cuts, 3)  # not the one playing
+    status[0] = 1
+    recut(path_at(player, 1), cuts, 3)  # stopped
+    assert not fw.calls('player_start_queue')
+    status[0] = 2
+    recut(path_at(player, 1), cuts, 3)
+    assert [a[0] for _, a in fw.calls('player_start_queue')] == [1]
+    poll(now[0] + 100)  # the new copy not settled yet
+    assert not fw.calls('player_seek_time')
+    poll(now[0] + 400)
+    assert [a[0] for _, a in fw.calls('player_seek_time')] == [1500 - 60 - 186] and not fw.calls('player_play_pause')
+    poll(now[0] + 800)  # once
+    assert len(fw.calls('player_seek_time')) == 1
+    sec[0], status[0] = 1100, 3  # paused, inside a cut: where the cut was
+    recut(path_at(player, 1), cuts, 3)
+    status[0] = 2
+    poll(now[0] + 400)
+    assert [a[0] for _, a in fw.calls('player_seek_time')][-1] == 1055 - 60 and len(fw.calls('player_play_pause')) == 1
+
+
 def test_an_insert_remaps_every_index(fw, player):
     insert = fw.fn('playback_insert', None, C.c_uint, C.c_uint, C.c_int)
     rows = player.load(player.albums(3, 3))

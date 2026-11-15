@@ -3416,3 +3416,35 @@ def test_classic_art_stands_upright_over_its_reflection(fw):
     assert up[(rows - 1) * side] == 0xffffffff  # faded to the paper
     turned = draw(O['SLANT_FAR'])
     assert turned[side - 1] == 0xffffffff and red(up[side - 1])  # the turn's far column starts lower; upright's doesn't
+
+
+def test_episodes_list_every_episode_in_the_order_library_and_folders_sets(fw):
+    """Q2 Podcast's Episodes (stock's Recently Added query, getAllRecentAddRecord, in the podcasts' scope): every
+    episode, not the newest 100, newest first, by title or by podcast, either way round, as Library & Folders sets
+    (podcast.c's Q2POD EPORDER; the user's, 2026-11-16); an untagged one by its file name, a podcast's episodes
+    newest first. Music's Recently Added keeps stock's query."""
+    sent, order = [], [b'0']
+    fw.mock('stock_dbquery_trampoline', lambda db, sql, *_: sent.append(C.string_at(sql).decode()))
+
+    def read(path, section, key, out, default, *_):
+        v = order[0] if C.string_at(key) == b'EPORDER' else C.string_at(default)
+        C.memmove(out, v + b'\0', len(v) + 1)
+    fw.mock('toolsReadConfig', read)
+    query = fw.fn('ringnav_library_query', C.c_int, C.c_char_p, C.c_char_p, C.c_void_p, C.c_int)
+    music = fw.var('navigation__library_music', C.c_int)
+    added = b'select * from songtable ORDER BY time_create desc limit 100;'
+    music.value = 2
+    for k in b'012349':  # 9: none such, newest first
+        order[0] = bytes([k])
+        query(b'/mnt/data/database.db', added, None, 0)
+    query(b'/mnt/data/database.db', b"select * from songtable where album like 'A' ORDER BY time_create desc limit 100;", None, 0)
+    music.value = 1
+    query(b'/mnt/data/database.db', added, None, 0)
+    assert not sent[-2].endswith('desc, id;') and sent[-1].endswith(' ORDER BY time_create desc limit 100;')
+    db = sqlite3.connect(':memory:')
+    db.execute(SONGTABLE)
+    eps = [(1, 'b.mp3', '/mnt/mmc/Podcasts/Zed/b.mp3', 'Zed', 'Banana', 3), (2, 'a.mp3', '/mnt/mmc/Podcasts/Ant/a.mp3', 'Ant', 'cherry', 1),
+           (3, 'Apple.mp3', '/mnt/mmc/Podcasts/Ant/c.mp3', 'Ant', '', 2), (4, 'x.flac', '/mnt/mmc/Music/x.flac', 'Ant', 'Aardvark', 9)]
+    db.executemany('insert into songtable(id, filename, fileurl, album, name, time_create) values (?, ?, ?, ?, ?, ?)', eps)
+    ids = [[r[0] for r in db.execute(sql)] for sql in sent[:6]]
+    assert ids == [[1, 3, 2], [3, 1, 2], [2, 1, 3], [3, 2, 1], [1, 3, 2], [1, 3, 2]]  # newest; A-Z; Z-A; show A-Z; Z-A

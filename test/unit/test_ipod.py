@@ -562,7 +562,7 @@ def test_playing_stock(audited):
                                                                      [375 - ipod.NP_TIME_X - 80, ipod.NP_TIMES_Y, 80, 16]]
     # the columns' glyphs: the left's ink centred on Return's chevron, the right's on More's dots (twice the centres,
     # from ipod.py's ink columns; test/build.py measures the shipped images); down the left, PC_GAP from each glyph's
-    # ink to the next's, from Return's; the right's rows level with the left's (the user's, 2026-11-15)
+    # ink to the next's, from Return's; each right glyph's ink centred on its left one's (the user's, 2026-11-15, 11-16)
     (lx, ly), (rx, _) = ipod.pc_frames()[0], ipod.pc_frames()[3]
     ret, more = n['img_return'][1], n['img_more'][1]
     assert abs(2 * lx + ipod.PC_GLYPH_INK2 - (2 * ret[0] + ipod.PC_RETURN_INK2)) <= 1
@@ -573,7 +573,7 @@ def test_playing_stock(audited):
     frames = ipod.pc_frames()
     spans = [span(0, 'navbar_return', ipod.NP_TOP, 0)] + [span(y, image) for (_, y), image in zip(frames, ipod.PC_IMAGES[:3])]
     assert [b[0] - a[1] for a, b in zip(spans, spans[1:])] == [ipod.PC_GAP] * 3
-    assert span(frames[3][1], 'airplay')[1] == spans[1][1] and [y for _, y in frames[4:]] == [y for _, y in frames[1:3]]
+    assert sum(span(frames[3][1], 'airplay')) == sum(spans[1]) and [y for _, y in frames[4:]] == [y for _, y in frames[1:3]]
     assert min(y for _, y in frames) >= 0
     assert min(c[1][1] for c in n['view_info'][3]) == ipod.PC_DESC_TOP  # the info's first row as Description's
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])

@@ -380,7 +380,7 @@ def test_more_apps_than_slots(fw):
 def test_the_features_are_published_at_every_scan(fw):
     world = card(fw)
     scan(fw)
-    assert world.written[b'/tmp/q2-addon.caps.tmp'] == b'playlist progress pages library goto sleep game audio sections art window urls sort places\n'
+    assert world.written[b"/tmp/q2-addon.caps.tmp"] == b"playlist progress pages library goto sleep game audio sections art window urls sort places recut\n"
     assert world.of('rename') == [(b'/tmp/q2-addon.caps.tmp', b'/tmp/q2-addon.caps')]
 
 
@@ -1042,6 +1042,17 @@ class Sleep:
 
     def paused(self):
         return len(self.fw.calls('player_play_pause'))
+
+
+@pytest.mark.parametrize('raw', [b'/mnt/mmc/Podcasts/S/e.mp3\n100\t160\n1055\t1241\n', b'/etc/passwd\n1\t2\n', b'', b'x',
+                                 b'/mnt/mmc/../etc\n1\t2\n', b'/mnt/mmc/a.mp3\n12345678\t1\nx\ty\n5\t3\n'])
+def test_a_recut_note_is_read_once_and_removed(fw, raw):
+    """An app's .recut (q2-pocket's Remove Ads Again: a new copy of a song is in place, cut): read and removed,
+    whatever it holds; nothing plays here, so podcast_recut starts nothing (test_playback.py has its restart)."""
+    s = Sleep(fw)
+    s.world.files[b'/tmp/q2-foo.recut'] = raw
+    fw.fn('addon__recut_read', None, C.POINTER(App))(C.pointer(ap(fw).a[0]))
+    assert s.world.of('unlink') == [(b'/tmp/q2-foo.recut',)] and not fw.calls('player_start_queue')
 
 
 def test_a_timer_runs_on_the_boot_clock(fw):

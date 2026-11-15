@@ -494,7 +494,7 @@ def validate_assets(directory):
     assert [bar[0], bar[0] + bar[2]] == [NP_TIME_X, 375 - NP_TIME_X] and bar[1] + bar[3] // 2 == NP_BAR[1] + NP_BAR[3] // 2
     assert nodes['label_playtime'][1][:2] == [NP_TIME_X, NP_TIMES_Y] and nodes['label_playlen'][1][:2] == [375 - NP_TIME_X - 80, NP_TIMES_Y]
     # the side columns' glyphs on Return's chevron and More's dots, PC_GAP between each glyph's ink and the next's
-    # down from Return's, the right's rows level with the left's: measured on the images the build ships, each drawn
+    # down from Return's, each right glyph's ink centred on its left one's: measured on the images the build ships, each drawn
     # centred in its frame
     def ink(image):
         from PIL import Image
@@ -514,7 +514,7 @@ def validate_assets(directory):
         return top + frame[1] + (frame[3] - h) // 2 + y0, top + frame[1] + (frame[3] - h) // 2 + y1
     spans = [rows(ret, 'navbar_return', 0)] + [rows(nodes[n][1], named[n].get('image', 'play_unfav')) for n in PC_SIDE[:3]]
     assert [b[0] - a[1] for a, b in zip(spans, spans[1:])] == [PC_GAP] * 3, spans
-    assert rows(nodes['img_airplay'][1], 'airplay')[1] == spans[1][1]
+    assert sum(rows(nodes['img_airplay'][1], 'airplay')) == sum(spans[1])  # the star's and AirPlay's ink on one centre
     assert [nodes[n][1][1] for n in PC_SIDE[4:]] == [nodes[n][1][1] for n in PC_SIDE[1:3]]
     # stock's hit test skips only insensitive widgets: the hidden shelf took every touch on the pages (1.8.0)
     assert named['view_pc_shelf']['sensitive'] == 'false' and nodes['view_pc_shelf'][1][0] < -300

@@ -1816,12 +1816,14 @@ def test_library_and_folders_is_stocks_page_again_with_the_library_rows(fw, st):
     opener = row(ui, view, 'Library & Folders')
     click(ui, opener)
     assert sub['name'] == b'playset/playset_page' and sub['title'] == ui.text(label_of(opener))  # titled as its row
-    ours, kept = sub['rows'][:4], sub['rows'][4:]
+    ours, kept = sub['rows'][:5], sub['rows'][5:]
     assert [r.name for r in kept] == ['s14', 's13']  # stock's Folder skip and Folder art, last
+    assert ui.text(label_of(ours[3])) == 'Episodes: Newest First'  # Q2 Podcast's Episodes order (the user's, 2026-11-16)
     for r in ours:
         click(ui, r)
-    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Folder Root
-    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'FOLDERROOT']
+    # the library's rows, by the setting each saves: Artists, Artist album order, Year order, Episodes order, Folder Root
+    assert [key for key, _ in settings.written] == ['ARTISTTYPE', 'ARTISTAZ', 'YEAROLD', 'EPORDER', 'FOLDERROOT']
+    assert ('EPORDER', 1) in settings.written
     again = ui.add('scroll_view', ui.window('playset_page'), (0, 26, 375, 294), 'scroll_view_playset')
     playset(fw, ui, again)
     audioset(ui.top.addr, None)

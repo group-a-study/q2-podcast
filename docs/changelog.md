@@ -1,5 +1,13 @@
 # Changelog
 
+- **1.8.5**:
+  - Queue, on Now Playing and from View Queue: tapping an episode opens its menu instead of playing it, with **Play Now** first. Each episode's ⋯ is a ⋮ now.
+  - Now Playing's Description: scrolled down, swiped away and back, it no longer jumps down and back up. Its text had been taken as what a finger last touched, which the page scrolls into view (to its end) when it comes back. Anything that still moves it as it comes in glides it back to the top, as Transcript does.
+  - Now Playing: the buttons beside the cover are level in pairs on their centres: the star with AirPlay, skip back with skip forward, and the two chapter buttons.
+  - Next chapter with no chapter left: the next episode in the queue plays, and the one you left goes next (where it left off). Before, it went to the end of the queue.
+  - Library → Episodes lists every episode (it showed the newest 100), in the order you choose in **Settings → Playback → Library & Folders → Episodes**: Newest First, Title A–Z, Title Z–A, Podcast A–Z or Podcast Z–A.
+  - Pocket 1.9 (in the App Store): **Remove Ads Again** on the episode playing now carries on from the same moment of the new copy once it's ready. Before, the old copy played on, sponsor reads and all. Long high-quality episodes (Huberman Lab's are 400 MB) are checked for ads again instead of going in uncut, and each episode keeps its own title (an Acast episode's tag called it "THEME SONG") and a cover the Library's lists can show (Very Bad Wizards' was a PNG).
+
 - **1.8.4**:
   - An episode that plays to its end leaves the queue. Before, it went to the end of Up Next.
   - Queue, on Now Playing and from View Queue: each episode has a ⋯ where its arrows were. It opens Move Up, Move Down, Move to Top, Move to Bottom, Delete When Finished, Delete Episode and Remove from Queue.

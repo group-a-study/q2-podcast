@@ -24,6 +24,7 @@ int playback_drop(unsigned at);       /* a deleted file's row out of the queue, 
 int playback_find(const char *path); /* the queue's row of that file (not the playing one), or -1 */
 int playback_sink(unsigned from);    /* a row after the playing one to the queue's end; 0 none */
 int podcast_pick(void *q, int at);    /* podcast.c: a list's pick of an episode, played now */
+void podcast_recut(const char *path, const int *cuts, int n); /* podcast.c: a new copy in place */
 void playback_poll(void);
 void playback_speed_start(void);
 void playback_track_speed(void); /* a track's start: the folder's speed, to the decoder */
