@@ -520,8 +520,10 @@ def audited(monkeypatch):
 
 def test_playing_stock(audited):
     """Q2 Podcast's Now Playing: the top row's More and "3 of 12"; the slide area from PC_TOP, its first page the art
-    centred, the title and show under it and the side buttons; Description, Chapters, the Queue and the info, the
-    info's column centred; the lyrics hidden aside; the dots at PC_DOTS; the play mode hidden; stock's bar."""
+    centred, the title and show under it and the side buttons, their columns on Return's chevron and More's dots;
+    Description (its text PC_DESC_TOP down), the Queue and the info, the info's column centred; Chapters, Transcript
+    and the lyrics hidden aside until an episode has them; the dots at PC_DOTS; the play mode hidden; the bar and
+    times as the iPod page's (the user's, 2026-11-15)."""
     root = ipod.decode(ipod.playing_stock(audited(stock_page())))
     n = named(root)
     assert n['scroll_lrc'][2]['self_layout'] == 'default(x=0,y=0,w=100%,h=100%)'
@@ -537,9 +539,9 @@ def test_playing_stock(audited):
     assert pos[1][0] == 375 - ipod.NP_ICONS_END + ipod.NP_ICON and pos[1][0] * 2 + pos[1][2] == 375
     assert pos[2]['style:normal:text_align_h'] == 'center'
     assert n['img_playmode'][2]['visible'] == 'false' and n['img_playmode'][1][0] == -200
-    assert [c[2]['name'] for c in n['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters', 'view_pc_queue',
-                                                          'view_info']
-    assert [c[2]['name'] for c in n['view_pc_shelf'][3]] == ['view_lyric'] and n['view_pc_shelf'][2]['visible'] == 'false'
+    assert [c[2]['name'] for c in n['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_queue', 'view_info']
+    assert [c[2]['name'] for c in n['view_pc_shelf'][3]] == ['view_lyric', 'view_pc_chapters', 'view_pc_transcript']
+    assert n['view_pc_shelf'][2]['visible'] == 'false' and n['label_pc_desc'][1][1] == ipod.PC_DESC_TOP
     # hidden is not enough: stock's hit test skips only insensitive widgets (the shelf took every touch in 1.8.0)
     assert n['view_pc_shelf'][2]['sensitive'] == 'false' and n['view_pc_shelf'][1][0] == -400
     assert n['image_wait'][2]['sensitive'] == 'false'
@@ -552,7 +554,16 @@ def test_playing_stock(audited):
     assert {'scrlabel_title', 'scrlabel_artist'} <= set(album) and n['slide_view_view'][1][1] == ipod.PC_TOP
     assert ipod.PC_TOP + n['slide_indicator1'][1][1] == ipod.PC_DOTS
     assert [c[1][0] for c in n['view_info'][3]] == [75] * 4
-    assert n['slider_play'][1] == [50, 208 + 41 + 6 - ipod.NP_TOUCH // 2, 290, ipod.NP_TOUCH]
+    assert n['slider_play'][1] == [ipod.NP_BAR[0], 208 + 41 + 6 - ipod.NP_TOUCH // 2, ipod.NP_BAR[2], ipod.NP_TOUCH]
+    assert [n[t][1] for t in ('label_playtime', 'label_playlen')] == [[ipod.NP_TIME_X, ipod.NP_TIMES_Y, 80, 16],
+                                                                     [375 - ipod.NP_TIME_X - 80, ipod.NP_TIMES_Y, 80, 16]]
+    # the columns' glyphs: the left's ink centred on Return's chevron, the right's on More's dots (twice the centres,
+    # from ipod.py's ink columns; test/build.py measures the shipped images), both PC_SIDE_DROP down
+    (lx, ly), (rx, _) = ipod.pc_frames()[0], ipod.pc_frames()[3]
+    ret, more = n['img_return'][1], n['img_more'][1]
+    assert abs(2 * lx + ipod.PC_GLYPH_INK2 - (2 * ret[0] + ipod.PC_RETURN_INK2)) <= 1
+    assert abs(2 * rx + ipod.PC_GLYPH_INK2 - (2 * more[0] + ipod.PC_MORE_INK2)) <= 1
+    assert ly == ipod.PC_SIDE_DROP > 0
     assert n['slider_play'][2]['bar_size'] == str(ipod.NP_BAR[3])
     assert [c[2]['name'] for c in root[3]] == ['view_buttons', 'label_playtime', 'label_playlen', 'slide_view_view', 'slider_play',
                                                'img_repeata', 'img_repeatb', 'image_wait']

@@ -132,6 +132,14 @@ static char *art_path(char *out, unsigned key, const char *suffix) {
     tk_snprintf(out, 512, ART_DIR "/%08x.jpg%s", key, suffix);
     return out;
 }
+/* The cover Cover Flow made of an album artist's album, as a file:// URL in out (at least 520
+ * bytes), or 0 when it has none yet: Q2 Podcast's Queue rows (podcast.c ep_art). */
+const char *coverflow_art_url(const char *artist, const char *album, char *out) {
+    if (!album || !*album) return 0;
+    memcpy(out, "file://", 7);
+    art_path(out + 7, tags_key(artist, album), "");
+    return access(out + 7, 0) ? 0 : out;
+}
 /* Asks the image cache for a cover only once its file exists: a load made before the worker wrote
  * it stays a failure, and the placeholder would stay until a reboot. url is "file://" + the path. */
 static int art_exists(const char *url) { return !access(url + 7, 0); }
@@ -2734,6 +2742,12 @@ static int play(void *ctx, void *event) {
         page_retitle(cf.page, cf.title, "Storage unavailable");
         return 0;
     }
+    /* Q2 Podcast (the user's, 2026-11-15): with an episode playing or paused, the pick plays and
+     * that one goes next, the queue after it kept (playback_play_now); else the show from it */
+    if (playback_play_now(t)) {
+        playback_np();
+        return 0;
+    }
     play_folder(cf.tracks, i, 0xff10);
     return 0;
 }
@@ -2785,9 +2799,15 @@ const char *track_name(char *buf, unsigned size, void *t) {
 }
 
 extern void *staged_music(int (*query)(void *), void *arg, int *count);
+/* r's tracks. Q2 Podcast's covers are its shows (COVERFLOW_WHERE), so a show's are its episodes, in
+ * the podcasts' scope (staged_podcasts): staged_music's left every one out, and a tapped cover came
+ * up empty (the user's, 2026-11-15). An album of music (an era's: library_lists.c) keeps music's. */
+extern void *staged_podcasts(int (*query)(void *), void *arg, int *count);
 void *coverflow_album_tracks(void *r) {
     int n;
-    return in_order(staged_music(albums, r, &n), r);
+    const char *path = r ? P(r, REC_PATH) : 0;
+    int music = path && strncasecmp(path, "/mnt/mmc/podcasts/", 18); /* PODCASTS_WHERE's, as LIKE: any case */
+    return in_order((music ? staged_music : staged_podcasts)(albums, r, &n), r);
 }
 
 /* A label's face at px, in every state the labels style: bold, the theme's (bold itself), by its

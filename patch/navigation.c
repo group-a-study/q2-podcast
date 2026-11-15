@@ -234,6 +234,15 @@ void *staged_music(int (*query)(void *), void *arg, int *count) {
     library_music = saved;
     return out;
 }
+/* Q2 Podcast's Cover Flow (coverflow.c coverflow_album_tracks): a show's episodes, in the podcasts'
+ * scope as its covers are (COVERFLOW_WHERE), not staged_music's, which leaves every podcast out. */
+void *staged_podcasts(int (*query)(void *), void *arg, int *count) {
+    int saved = library_music;
+    library_music = LIBRARY_PODCASTS;
+    void *out = staged(query, arg, count);
+    library_music = saved;
+    return out;
+}
 
 extern int album_only(void *, void *, int), coverflow_split(void *);
 #define SCROLL_MARGIN 12
@@ -7487,6 +7496,8 @@ enum {
     QA_CHAPTERS,
     QA_SKIP_BACK, /* Q2 Podcast's skip lengths (podcast.c skip_seconds): a choice of SKIPS each */
     QA_SKIP_FWD,
+    QA_DELETE, /* Q2 Podcast (the user's, 2026-11-15): a Folder song's file off the card */
+    QA_DELFIN, /* and an episode's Delete When Finished (podcast.c) */
     QA_MORE
 };
 
@@ -8819,7 +8830,7 @@ static int qm_run(const void *unused) {
     qm_close();
     void *r = qm_record();
     int a = st.qm_action, cls = st.qm_kind == QM_COVERFLOW ? 0xf001 : (int)st.qm_cls;
-    unsigned aid = r ? qm_album_id(r) : 0; /* an album's own Favourites and Rate */
+    unsigned aid = r ? qm_album_id(r) : 0;          /* an album's own Favourites and Rate */
     if (a >= 100 && st.qm_choice >= QC_SKIP_BACK) { /* a skip length */
         skip_set(st.qm_choice == QC_SKIP_FWD, skip_at(a - 100));
         st.qm_choice = 0;
@@ -8831,9 +8842,17 @@ static int qm_run(const void *unused) {
         qm_open(0);
     } else if (r && a == QA_CHAPTERS) {
         chapters_open(r);
+    } else if (r && a == QA_DELETE) {
+        podcast_delete(r);
+    } else if (r && a == QA_DELFIN) {
+        int on = !podcast_delfin(r);
+        podcast_delfin_set(r, on);
+        toast(on ? "Delete When Finished: On" : "Delete When Finished: Off");
     } else if (r && a == QA_QUEUE) {
         /* A shuffle's play order is not the list's: ours (Up Next). A Play Next stock's Shuffle was
          * holding (ringnav_shuffle) goes first in it, as advanced play has no forced pick. */
+        /* Q2 Podcast (the user's, 2026-11-15): always ours, the episodes with their art, titles
+         * and arrows (upnext.c), never stock's list of files */
         if (playback_listable()) {
             void *queue = P(mcl_pdeqplaylist, 0);
             unsigned at = st.qm_forced - 1;
@@ -8841,9 +8860,8 @@ static int qm_run(const void *unused) {
             if (queue && at < deque_size(queue) &&
                 rec_hash(deque_at(queue, at)) == st.qm_forced_hash)
                 playback_move(at);
-            up_next(page_keyup);
-        } else
-            navigator_to("playerqueue_page");
+        }
+        up_next(page_keyup);
     } else if (a == QA_MORE && st.qm_kind == QM_PLAYLIST) {
         if (r) navigator_to_with_context("localmusic/playlistsmore_page", (void *)(long)st.qm_idx);
     } else if (a == QA_MORE) {
@@ -8971,6 +8989,7 @@ static void qm_title(void *dialog, const char *s) {
 static int qm_open(const void *unused) {
     st.qm_timer = 0;
     void *wm = window_manager(), *page = window_manager_get_top_window(wm);
+    int folder = page && !tk_strcmp(widget_get_prop_str(page, "name", ""), "folder_page");
     void *r = usable() && !window_manager_is_animating(wm) ? qm_record() : (void *)0;
     if (!r) return 0;
     navigator_to("dialog/sortselect_dialog");
@@ -9015,9 +9034,11 @@ static int qm_open(const void *unused) {
                                    : kind == 1 ? repeat[folder]
                                    : skips     ? lengths
                                                : groups;
-        qm_title(dialog, kind == 0 ? "Shuffle" : kind == 1 ? "Repeat" : st.qm_choice == QC_SKIP_BACK ? "Skip Back"
-                                    : st.qm_choice == QC_SKIP_FWD                                     ? "Skip Forward"
-                                                                                                      : "Group by");
+        qm_title(dialog, kind == 0                      ? "Shuffle"
+                         : kind == 1                    ? "Repeat"
+                         : st.qm_choice == QC_SKIP_BACK ? "Skip Back"
+                         : st.qm_choice == QC_SKIP_FWD  ? "Skip Forward"
+                                                        : "Group by");
         widget_destroy_children(view);
         int painted = dialogs_painted(), row = painted ? theme()->page_row : QM_ROW,
             w = painted ? BACK_W : 375;
@@ -9028,8 +9049,7 @@ static int qm_open(const void *unused) {
             widget_use_style(label, "s_scrlabel_white24l");
             widget_set_text_utf8(label, names[i]);
             if (painted) hold_label(item, label);
-            if (i == chosen)
-                image_base_set_image(image_create(item, w - 35, 0, 24, row), "select");
+            if (i == chosen) image_base_set_image(image_create(item, w - 35, 0, 24, row), "select");
             widget_on(item, EVT_CLICK, qm_pick, (void *)(long)(100 + i));
         }
         widget_set_prop_int(view, "virtual_h", count * row);
@@ -9094,8 +9114,12 @@ static int qm_open(const void *unused) {
         acts[n++] = QA_GROUP;
         acts[n++] = QA_SKIP_BACK, acts[n++] = QA_SKIP_FWD; /* Q2 Podcast's skip lengths */
         if (!group_first && st.rate_win) acts[n++] = QA_RATE;
-        if (np_more()) acts[n++] = QA_MORE; /* last: Now Playing's own menu */
     }
+    /* Q2 Podcast: an episode's Delete When Finished; a Folder song's Delete File */
+    if (song && spoken(P(r, REC_PATH))) acts[n++] = QA_DELFIN;
+    if (st.qm_kind == QM_SONG && folder) acts[n++] = QA_DELETE;
+    /* last: Now Playing's own menu */
+    if (st.qm_kind == QM_PLAYING && np_more()) acts[n++] = QA_MORE;
     if (st.qm_kind == QM_PLAYLIST) acts[n++] = QA_MORE; /* its dots' page */
     static const char *const rows[] = { "Play Next",
                                         "Add to Queue",
@@ -9117,6 +9141,8 @@ static int qm_open(const void *unused) {
                                         "Chapters",
                                         "Skip Back",
                                         "Skip Forward",
+                                        "Delete File",
+                                        "Delete When Finished",
                                         "More…" };
     char rated[32], skip_text[32];
     /* stock sortselect row styles */
@@ -9134,14 +9160,16 @@ static int qm_open(const void *unused) {
         }
         if (acts[i] == QA_SKIP_BACK || acts[i] == QA_SKIP_FWD)
             skip_label(acts[i] == QA_SKIP_FWD, skip_text, sizeof skip_text);
-        widget_set_text_utf8(label,
-                             acts[i] == QA_SKIP_BACK || acts[i] == QA_SKIP_FWD ? skip_text
-                             : acts[i] == QA_RATE ? rated
-                             : acts[i] == QA_GROUP
-                                 ? (playback_option(2) ? "Group by: Folder" : "Group by: Album")
-                             : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "Next Folder"
-                             : acts[i] == QA_PREV_GROUP && playback_option(2) ? "Previous Folder"
-                                                                              : rows[acts[i] - 1]);
+        widget_set_text_utf8(
+            label,
+            acts[i] == QA_SKIP_BACK || acts[i] == QA_SKIP_FWD ? skip_text
+            : acts[i] == QA_DELFIN
+                ? (podcast_delfin(r) ? "Delete When Finished: On" : "Delete When Finished: Off")
+            : acts[i] == QA_RATE  ? rated
+            : acts[i] == QA_GROUP ? (playback_option(2) ? "Group by: Folder" : "Group by: Album")
+            : acts[i] == QA_NEXT_GROUP && playback_option(2) ? "Next Folder"
+            : acts[i] == QA_PREV_GROUP && playback_option(2) ? "Previous Folder"
+                                                             : rows[acts[i] - 1]);
         if (painted) hold_label(item, label);
         widget_on(item, EVT_CLICK, qm_pick, (void *)(long)acts[i]);
     }

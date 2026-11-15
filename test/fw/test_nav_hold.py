@@ -1573,12 +1573,14 @@ def test_remove_from_favourites_untags_the_song(hold, recs, ui, fw):
     assert [a[0] for _, a in fw.calls('deleteMusicFromFav')] == [songs[1]] and fw.var('g_delete_flag', C.c_ubyte).value == 0
 
 
-def test_view_queue_opens_stocks_queue_in_order(hold, recs, ui):
+def test_view_queue_opens_the_episodes_queue_not_stocks_list_of_files(hold, recs, ui):
+    """Q2 Podcast (the user's, 2026-11-15): View Queue is always upnext.c's (each episode's art, title and show),
+    never stock's playerqueue_page, which listed files."""
     hold.now_playing([song(recs, i) for i in range(3)])
     hold.hold()
     hold.menu()
     hold.pick('View Queue')
-    assert ui.went[-1] == 'playerqueue_page'
+    assert ui.nodes[ui.top()].name == 'upnext_page' and 'playerqueue_page' not in ui.went
 
 
 def test_add_to_queue_appends_the_song(hold, recs, ui):

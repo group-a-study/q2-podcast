@@ -806,10 +806,17 @@ def test_move_refuses(fw, player, case):
     assert move({'current': 2, 'past': 6}.get(case, 1)) == -1 and player.pending() == []
 
 
+def path_at(player, i):
+    """The queue's row i's path."""
+    return C.string_at(struct.unpack_from('<Q', C.string_at(player.deques[player.handle][i], 0x60), O['REC_PATH'])[0])
+
+
 def test_raise_swaps_an_up_next_row_with_the_one_before(fw, player):
-    """Q2 Podcast's Queue page: an up arrow; the rows to it become the pending front in their new order."""
+    """Q2 Podcast's Queue pages: an up arrow. In advanced play the rows to it become the pending front in their new
+    order; without it the two rows swap in the queue, which then plays in its own order."""
     rows = fw.fn('playback_queue_rows', C.c_uint, C.c_void_p, C.c_uint)
     up = fw.fn('playback_raise', C.c_int, C.c_uint)
+    player.mcl.type = LIBRARY
     player.load(player.albums(6))
     assert player.set(0, 1) == 1
     before = player.up_next()
@@ -819,18 +826,62 @@ def test_raise_swaps_an_up_next_row_with_the_one_before(fw, player):
     assert list(out[:rows(out, 8)]) == player.up_next()
     assert up(0) == 0 and up(len(before)) == 0  # the first row, past the last: nothing moves
     assert up(1) == 1 and player.up_next()[:2] == [before[2], before[0]]
+    # without advanced play (the user's, 2026-11-15: the page said "Nothing playing"): the queue's order after the
+    # playing row is Up Next, and an arrow swaps two rows of the queue
+    player.clear()
+    player.load(player.albums(6), pos=1)
+    assert list(out[:rows(out, 8)]) == [2, 3, 4, 5]
+    paths = [path_at(player, i) for i in range(6)]
+    assert up(2) == 1  # Up Next's third (row 4) goes before its second (row 3)
+    assert [path_at(player, i) for i in range(6)] == paths[:3] + [paths[4], paths[3]] + paths[5:]
+    assert up(0) == 0 and up(4) == 0 and player.mcl.pos == 1
+    player.mcl.type = 2  # not a local queue (a stream's): nothing
+    assert up(1) == 0 and rows(out, 8) == 0
 
 
 def test_play_swap_keeps_the_playing_track_next(fw, player):
-    """The Queue page's tap: the track tapped is taken off the pending list and the playing one goes first."""
+    """The Queue pages' tap: in advanced play the track tapped is taken off the pending list and the playing one goes
+    first; without it the tapped row moves to the playing row's place, the playing one after it. Either way the
+    index to start comes back (-1: nothing)."""
     swap = fw.fn('playback_play_swap', C.c_int, C.c_uint)
+    player.mcl.type = LIBRARY
     player.load(player.albums(6))
     assert player.set(0, 1) == 1
     playing, pick = player.mcl.pos, player.up_next()[3]
-    assert swap(pick) == 1 and player.pending() == [playing]
-    assert swap(player.mcl.pos) == 0  # the one playing: nothing
+    assert swap(pick) == pick and player.pending() == [playing]
+    assert swap(player.mcl.pos) == -1  # the one playing: nothing
     player.clear()
-    assert swap(pick) == 0  # advanced play off
+    player.load(player.albums(6), pos=1)
+    paths = [path_at(player, i) for i in range(6)]
+    assert swap(4) == 1 and player.mcl.pos == 1  # row 4 plays at 1, the old one next, the rest in order
+    assert [path_at(player, i) for i in range(6)] == [paths[0], paths[4], paths[1], paths[2], paths[3], paths[5]]
+    paths = [path_at(player, i) for i in range(6)]
+    assert swap(0) == 0 and player.mcl.pos == 0  # an earlier row: the rows to the playing one move up with it
+    assert [path_at(player, i) for i in range(6)] == [paths[0], paths[1]] + paths[2:]
+
+
+def test_play_now_plays_a_pick_and_the_playing_track_goes_next(fw, player, mcl):
+    """Cover Flow's pick while a local queue plays or is paused (the user's, 2026-11-15): it goes in after the playing
+    row and plays now, the old one next, the rest after; nothing playing, or the pick playing already, changes
+    nothing in the queue."""
+    now = fw.fn('playback_play_now', C.c_int, C.c_void_p)
+    player.mcl.type = LIBRARY
+    player.load(player.albums(4), pos=1)
+    paths = [path_at(player, i) for i in range(4)]
+    pick = player.song(b'/mnt/mmc/Podcasts/Show/new.mp3', b'Show')
+    C.c_uint64.from_address(O['MCL_POOL']).value = player.deques.new()  # stock Shuffle's pool, which an insert moves
+    fw.mock('mclGetPlayStatus', lambda *_: 0)
+    assert now(pick) == 0 and [path_at(player, i) for i in range(4)] == paths
+    fw.mock('mclGetPlayStatus', lambda *_: 3)  # paused
+    assert now(pick) == 1
+    assert [path_at(player, i) for i in range(5)] == [paths[0], b'/mnt/mmc/Podcasts/Show/new.mp3', paths[1], *paths[2:]]
+    (at, *_), = [a for _, a in fw.calls('player_start_queue')]
+    assert at == 1 and player.mcl.pos == 1
+    # the episode playing picked again: Now Playing, the queue as it is (a fresh pool: the host's holds ints, where
+    # stock's deque_at gives a pointer to one)
+    C.c_uint64.from_address(O['MCL_POOL']).value = player.deques.new()
+    assert now(player.deques[player.handle][1]) == 1 and len(fw.calls('player_start_queue')) == 1
+    assert len(player.deques[player.handle]) == 5
 
 
 def test_an_insert_remaps_every_index(fw, player):

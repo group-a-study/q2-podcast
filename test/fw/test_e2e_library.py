@@ -751,7 +751,7 @@ class Q2:
             # playing_page_init: player_start with its context's queue, unless class 0xff (Now Playing as it is)
             dq = C.c_void_p.from_address(context).value
             idx, cls, mode = struct.unpack('<3i', C.string_at(context + 8, 12))
-            if cls != 0xff:
+            if cls != 0xff and dq:  # playback_np's {0, 0, 0xff, 2} reads as no queue in this 64-bit layout
                 self.call('player_start', dq, idx, cls, mode)
         return 0
 
@@ -950,11 +950,27 @@ def shuffle_albums(q):
     q.tap('Shuffle Albums')
 
 
+def up_next_rows(q, view):
+    """View Queue's Up Next rows in view, each its title and show (the playing one's row aside; art and arrows are
+    images, no text)."""
+    rows = [tuple(t for t in row if t is not None) for row in q.rows_of(view)]
+    return [r for r in rows if not (len(r) > 1 and r[1].startswith('Now Playing'))]
+
+
+def tap_row(q, view, title):
+    """View Queue's row titled title, tapped (a click with no pointer: a Centre press)."""
+    (item,) = [i for i in q.children.get(view, []) if title in [q.texts.get(c) for c in q.children.get(i, [])]]
+    fn, ctx = q.handlers[item, O['EVT_CLICK']]
+    return C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(fn)(ctx, None)
+
+
 def up_next(q):
-    """View Queue in a shuffle: Up Next's rows, each its title over its artist."""
+    """View Queue in a shuffle: Up Next's rows (the playing one's first row aside), each its title over its show
+    (podcast.c podcast_row: the art and arrows are images, no text)."""
     page = q.fw.lib.navigation__page_closed, q.fw.lib.page_keyup
     q.fw.fn('up_next', None, C.c_void_p, C.c_void_p)(*(C.cast(f, C.c_void_p) for f in page))
-    return q.rows_of(q.last('scroll_view_create'))
+    rows = [tuple(t for t in row if t is not None) for row in q.rows_of(q.last('scroll_view_create'))]
+    return [r for r in rows if not (len(r) > 1 and r[1].startswith('Now Playing'))]
 
 
 def test_shuffle_albums_plays_each_album_whole_in_turn_as_up_next_said(q2):
@@ -984,11 +1000,12 @@ def test_a_pick_from_up_next_plays_it_and_previous_gives_back_what_it_jumped(q2)
     q.update()
     shuffle_albums(q)
     first = q.opened[0]
-    q.hold_playing(QA['QUEUE'])  # View Queue: in a shuffle, Up Next
-    rows = q.rows_of(q.last('scroll_view_create'))
+    q.hold_playing(QA['QUEUE'])  # View Queue: in a shuffle, Up Next after the playing one
+    view = q.last('scroll_view_create')
+    rows = up_next_rows(q, view)
     page = q.pages[-1]
     assert len(rows) == 6
-    q.tap(rows[2][0])  # the third: two jumped
+    tap_row(q, view, rows[2][0])  # the third: two jumped
     assert title_of(q, q.opened[-1]) == rows[2][0] and page not in q.pages  # it plays, and Up Next closes
     q.play_for(3)
     q.previous_key()  # 3 s in: back to the track the pick left

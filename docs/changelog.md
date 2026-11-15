@@ -1,5 +1,18 @@
 # Changelog
 
+- **1.8.2**:
+  - Cover Flow: tapping a podcast's cover lists its episodes again (it came up blank). Picking an episode while another is playing or paused plays it at once, and the one that was playing goes next in the queue, where it left off.
+  - Now Playing: the progress bar is as long as the iPod layout's, with the times under its ends.
+  - Now Playing: the buttons down the left of the cover line up under the back arrow, those on the right under the ⋯, and the columns sit lower, so the chapter buttons end level with the foot of the cover.
+  - Now Playing's Description: a little room above the text; the wheel scrolls it smoothly, pixel by pixel, as the lyrics page used to; and it always starts at the top when you swipe to it.
+  - Now Playing's pages: Chapters is there, with its dot, only for an episode that has chapters. The Queue page shows what's playing even when it's paused or stopped, instead of "Nothing playing".
+  - Queue, on Now Playing and from the ⋯ page or the Play/Pause hold menu: each episode with its podcast's art, its title (not its file name) and its podcast, the one playing first, and arrows to move an episode up or down. The wheel goes an episode at a time. Tap an episode to play it; the one that was playing goes next.
+  - Transcript reads as Description does: plain paragraphs, left-aligned, the one being spoken in white, scrolled smoothly by the wheel. It follows the episode until you scroll it, and picks up again when you come back to the page.
+  - Delete File: hold Play/Pause on a file in Folder to delete it (asked first), with its transcript and description. Deleting the file that's playing goes on to the next.
+  - Delete When Finished: a per-episode setting in the Play/Pause hold menu and Now Playing's ⋯ page, off unless you turn it on. Once that episode plays to its end, its file is deleted.
+  - Pocket: an episode played to its end on the Q2 is marked played in Pocket Casts and leaves Up Next on your phone, even when Pocket wasn't running as it ended (Q2 Podcast notes it for Pocket's next sync). Deleting a Pocket episode on the Q2 tells Pocket, which then doesn't download it again by itself.
+  - Now Playing and the queues name an episode by its title: the file's title tag, else the library's, else the file's name tidied up. Files with no title tag (some early Pocket downloads) get one from Pocket in the background; Update Local Music then shows them in the Library too.
+
 - **1.8.1**:
   - Now Playing takes touches again: in 1.8.0 a hidden view over the pages (the transcript's, waiting for an episode that has one) took every swipe and every tap but AirPlay's. It is now off the screen and ignores touches.
   - Now Playing: the back arrow is back, top left, and "2 of 26" is centred.

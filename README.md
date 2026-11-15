@@ -2,12 +2,13 @@
 
 A fork of [Q2 Pod](https://github.com/DiamondBond/q2-pod) 1.7.6 for podcasts and audiobooks. It has everything Q2 Pod has, and:
 
-- **Now Playing for podcasts:** the cover centred, with the star, skip back and the previous chapter down its left, AirPlay, skip on and the next chapter down its right; pages for the episode's **Description**, **Chapters**, the **Queue** (move episodes up and down, tap one to play it) and **Transcript**, which follows the episode as it plays.
+- **Now Playing for podcasts:** the cover centred, with the star, skip back and the previous chapter down its left, AirPlay, skip on and the next chapter down its right; pages for the episode's **Description** (the wheel scrolls it smoothly), **Chapters** (when it has some), the **Queue** (each episode's art, title and podcast; move episodes up and down, tap one to play it) and **Transcript**, which reads like the description and follows the episode as it plays.
 - **Skip and chapters:** on an episode or a book, Next skips on and Previous back, 30 and 5 seconds unless you choose other lengths (⋯ page, Play/Pause's hold menu, Playback settings); hold one to jump between chapters.
-- **Cover Flow of your podcasts:** a cover a show, its episodes on the card to play.
+- **Cover Flow of your podcasts:** a cover a show, its episodes on the card to play; an episode picked while another plays starts at once, and the other goes next.
+- **Delete File and Delete When Finished:** hold Play/Pause on a file in Folder to delete it, or set an episode to be deleted once it has played to its end (Play/Pause's hold menu, ⋯ page).
 - **A podcast Library:** Podcasts, Episodes, Starred, Playlists, Recently Played and Audiobooks.
 - **Pocket on Home:** Home's Shortcut row opens the Pocket app straight away.
-- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways, keeps the first ten of Up Next downloaded (or all of it, with a press), cuts the ads and brings each episode's transcript; on its episodes, Now Playing's star is Pocket Casts' star.
+- **Pocket Casts:** the [Pocket](https://github.com/group-a-study/q2-pocket) app in the App Store syncs your Up Next and places both ways (an episode finished on the Q2 is marked played and leaves Up Next), keeps the first ten of Up Next downloaded (or the next few, or all of it, with a press), cuts the ads and brings each episode's transcript; on its episodes, Now Playing's star is Pocket Casts' star.
 - **AirPlay**, **Apple Music** and **Bandcamp** in the App Store, with every app Q2 Pod lists.
 
 Install it as Q2 Pod's own instructions below say, with the update file from [this repository's releases](https://github.com/group-a-study/q2-podcast/releases/latest); **Network Update** then installs Q2 Podcast's releases. What changed is in the [changelog](docs/changelog.md). Q2 Pod's README follows.

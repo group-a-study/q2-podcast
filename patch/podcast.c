@@ -1,9 +1,11 @@
 /* Podcasts and audiobooks (docs/internals.md#podcasts-on-now-playing): on a spoken track the side
  * buttons skip back and forward, and held they jump between its chapters. Now Playing (Q2 Podcast's
  * page, tools/ipod.py playing_stock) has the same as buttons beside the art; its star stars a
- * Pocket episode in Pocket Casts (q2-pocket); its Description and Chapters pages follow the art,
- * and the lyrics page is the episode's transcript, there only while the track has one. A track
- * played from Folder takes the title its file has. */
+ * Pocket episode in Pocket Casts (q2-pocket); its Description page follows the art, then Chapters
+ * and the Queue, and Transcript last, Chapters and Transcript only while the episode has them. The
+ * wheel scrolls Description and Transcript a pixel at a time and the Queue a row at a time. A track
+ * played from Folder takes the title the library or its file has. A finished episode is noted for
+ * q2-pocket, and one set to Delete When Finished goes from the card. */
 #include "navigation.h"
 
 /* PC_HOLD_MS, SKIP_BACK_S and SKIP_FWD_S are in offsets.inc. A key-down PC_REPEAT_MS after the
@@ -27,13 +29,45 @@
 #define PAGE_X 16 /* tools/ipod.py NP_MARGIN */
 #define ROW_H 44
 #define TIME_W 76
-#define ROWS_MAX 200 /* the Chapters page's rows; a hold still reaches every chapter */
+#define ROWS_MAX 200  /* the Chapters page's rows; a hold still reaches every chapter */
 #define QUEUE_ROWS 60 /* the Queue page's Up Next rows (playback.c's PEND_LIMIT is 64) */
-#define ARROW_W 44    /* each of a Queue row's arrows */
+/* A Queue row (the user's, 2026-11-15, as Library's Episodes): the show's art, the episode's title
+ * over its show, the arrows at its end */
+#define Q_ROW_H 56
+#define Q_ART 44
+#define Q_TEXT_X (PAGE_X + Q_ART + 10)
+#define ARROW_W 40
 #define POLL_MS 500
-/* A transcript page stays this long after the player has no lyrics: reading the next track's
- * empties them a moment. */
-#define TRANSCRIPT_GONE_MS 2000
+#define DESC_TOP 12       /* tools/ipod.py PC_DESC_TOP: Description's and Transcript's first line */
+#define TEXT_ROW_PX 20    /* a wheel tick's worth on Description and Transcript (the lyrics' row) */
+#define GLIDE_EASE_MS 50  /* the wheel's glide: navigation.c's LYRIC_EASE_MS */
+#define ARRIVE_MS 400     /* Description held at its top this long after it comes in front */
+#define HOLD_TOUCH_MS 300 /* a finger on Transcript this long after it came in holds it */
+/* Transcript: q2-pocket's timed .lrc beside the episode, read this far, as paragraphs of at least
+ * TR_PARA_MIN_S, ending on a sentence's end, or TR_PARA_MAX_S at most; laid out TR_BUILD_PASS a UI
+ * pass so a long one never stalls Now Playing; a missing one looked for again every TR_LOOK_MS. */
+#define TR_MAX (256 * 1024)
+#define TR_PARAS 600
+#define TR_PARA_MIN_S 45
+#define TR_PARA_MAX_S 90
+#define TR_BUILD_PASS 6
+#define TR_GAP 10
+#define TR_LOOK_MS 5000
+/* Played: this near the end when it stops or another track starts (the resume ring's RESUME_EDGE_S,
+ * which forgets the place there), a track at least FINISH_MIN_S long, not a CUE one. */
+#define FINISH_EDGE_S RESUME_EDGE_S
+#define FINISH_MIN_S 60
+/* "F\t<path>" a finished episode, "D\t<path>" a file deleted, one a line: q2-pocket takes them
+ * (marks it played in Pocket Casts, out of Up Next; never fetches a deleted one by itself) and
+ * removes the file. Nothing is added while it is DONE_MAX long (no q2-pocket to take it). */
+#define DONE_FILE PEQ_ROOT "/mnt/data/ringnav-done"
+#define DONE_MAX (64 * 1024)
+/* Delete When Finished (the user's, 2026-11-15): the episodes set so, by path key, newest first */
+#define DELFIN_FILE PEQ_ROOT "/mnt/data/ringnav-delfinish"
+#define DELFIN_N 64
+#define EP_CACHE 64       /* episodes the library was asked about, kept */
+#define EP_RETRY_MS 30000 /* one it hasn't got (not scanned yet) asked again after this */
+#define PODCASTS "/mnt/mmc/Podcasts/"
 #define GREY 0xffaaaaaau
 enum { CH_NONE, CH_READING, CH_DONE };
 enum { B_BACK, B_FWD, B_CHAPTER_BACK, B_CHAPTER_FWD, B_N };
@@ -55,20 +89,23 @@ static struct {
     char *starred;
     unsigned stamp[3], ask_key, ask_at, stat_at, matched_key;
     int ask_on, matched_on, painted;
-    /* Now Playing's pages (tools/ipod.py): the window, its slide_view and dots, Description's
-     * scroll view and text, Chapters' page and scroll view, the lyrics page and the hidden view it
-     * waits in */
-    void *win, *slide, *dots, *desc_view, *desc_text, *ch_page, *ch_view, *lyric, *shelf;
+    /* Now Playing's pages (tools/ipod.py): the window, its slide_view and dots, the hidden view
+     * Chapters and Transcript wait in, and each page with its scroll view: Description's (and its
+     * text), Chapters', the Queue's and Transcript's */
+    void *win, *slide, *dots, *shelf, *desc_page, *desc_view, *desc_text, *ch_page, *ch_view;
+    void *q_page, *q_view, *tr_page, *tr_view;
     void *bar, *line[2]; /* the progress bar, and the title and show under the art, which span it */
-    void *q_page, *q_view;   /* the Queue page and its scroll view */
-    unsigned q_sig, q_n;     /* the queue as the page shows it (q_sign), its Up Next rows */
+    unsigned q_sig, q_n; /* the queue as the page shows it (q_sign), its Up Next rows */
     unsigned q_idx[QUEUE_ROWS]; /* their queue indices, in play order */
+    unsigned q_again;           /* when to build it again: a row the library hadn't got (0 none) */
     char *desc;
     int lit, shown_count;
     unsigned shown_desc, shown_rows; /* the track each page shows, ~0 to build again */
-    unsigned lyric_at;               /* the transcript last wanted (or out) */
     char *named;                     /* the title title_fill made from a file's name */
     int skip[2];                     /* the skip lengths, back and forward, once read (seconds) */
+    void *front;                     /* the page in front at the last look, since front_at */
+    unsigned front_at;
+    int desc_moved; /* Description scrolled since it came in front */
 } pc;
 
 /* The local track playing or paused, else 0. */
@@ -173,7 +210,8 @@ int skip_at(int i) { return SKIPS[i < 0 ? 0 : i >= SKIP_N ? SKIP_N - 1 : i]; }
 int skip_seconds(int fwd) {
     fwd = !!fwd;
     if (!pc.skip[fwd]) {
-        int def = fwd ? SKIP_FWD_S : SKIP_BACK_S, s = config_value("Q2POD", SKIP_KEY[fwd], 100, def), i = 0;
+        int def = fwd ? SKIP_FWD_S : SKIP_BACK_S,
+            s = config_value("Q2POD", SKIP_KEY[fwd], 100, def), i = 0;
         while (i < SKIP_N && SKIPS[i] != s) ++i;
         pc.skip[fwd] = i < SKIP_N ? s : def;
     }
@@ -283,8 +321,8 @@ int podcast_media(unsigned key) {
     return 1;
 }
 
-/* Now Playing's buttons beside the art: skip_seconds back and on in any local track; the previous or
- * next chapter in a spoken one, as the side buttons' holds, else the previous or next track.
+/* Now Playing's buttons beside the art: skip_seconds back and on in any local track; the previous
+ * or next chapter in a spoken one, as the side buttons' holds, else the previous or next track.
  * Returns 0: a STOP would keep the slide_view's grab (rate_fav_click). */
 static int button_tap(void *ctx, void *event) {
     int b = (int)(long)ctx;
@@ -477,8 +515,8 @@ static int name_only(const char *title, const char *name) {
     return !strcmp(title, name) || (strlen(title) == n && !strncmp(title, name, n));
 }
 
-/* Whether label w shows s already (a text too long to compare counts as shown, so a long title isn't
- * set again every pass, which would start its scroll over). */
+/* Whether label w shows s already (a text too long to compare counts as shown, so a long title
+ * isn't set again every pass, which would start its scroll over). */
 static int shows(void *w, const char *s) {
     char now[512] = "";
     if (strlen(s) >= sizeof now - 8) return 1;
@@ -486,26 +524,145 @@ static int shows(void *w, const char *s) {
     return !strcmp(now, s);
 }
 
+/* The library's episodes (the user's, 2026-11-15: rows and Now Playing name an episode by its
+ * title, as Library's Episodes do, never its file): what songtable has for a path, its title, show
+ * (album) and artist, asked once and kept (EP_CACHE, calloc'd at the first look). One it hasn't got
+ * (a download not scanned yet) is asked again after EP_RETRY_MS. ep_db: the database while a page
+ * asks about its rows (ep_batch), else each look opens it. */
+typedef struct {
+    unsigned key, at;
+    char *title, *show, *artist,
+        *album_artist; /* album_artist: as Artists and Cover Flow's albums have it */
+} ep_t;
+static ep_t *eps;
+static unsigned ep_next;
+static void *ep_db;
+#define DATABASE "/mnt/data/database.db"
+
+/* s in out, each ' doubled, for an SQL literal; 0 when it doesn't fit. */
+static int sql_quoted(char *out, unsigned size, const char *s) {
+    unsigned n = 0;
+    for (; *s; ++s) {
+        if (n + 3 >= size) return 0;
+        if (*s == '\'') out[n++] = '\'';
+        out[n++] = *s;
+    }
+    out[n] = 0;
+    return 1;
+}
+
+static int ep_row(void *ctx, int n, char **v, char **c) {
+    ep_t *e = ctx;
+    char **to[4] = { &e->title, &e->show, &e->artist, &e->album_artist };
+    for (int i = 0; i < 4 && i < n; ++i) *to[i] = v[i] && *v[i] ? strdup(v[i]) : 0;
+    return 1; /* the first row is enough */
+}
+
+static void ep_batch(int open) {
+    if (open && !ep_db && sqlite3_open(DATABASE, &ep_db)) {
+        if (ep_db) sqlite3_close(ep_db);
+        ep_db = 0;
+    } else if (!open && ep_db) {
+        sqlite3_close(ep_db);
+        ep_db = 0;
+    }
+}
+
+/* r's episode as songtable has it, by its name and path (stock's own key for a row, the name
+ * indexed), or 0. */
+static ep_t *ep_of(void *r) {
+    const char *path = r ? P(r, REC_PATH) : 0, *name = r ? P(r, REC_NAME) : 0;
+    if (!path || !name || (!eps && !(eps = calloc(EP_CACHE, sizeof *eps)))) return 0;
+    unsigned key = fnv(FNV_SEED, (const unsigned char *)path) | 1, now = (unsigned)time_now_ms(),
+             i = 0;
+    while (i < EP_CACHE && eps[i].key != key) ++i;
+    if (i < EP_CACHE && (eps[i].title || eps[i].show || now - eps[i].at < EP_RETRY_MS))
+        return &eps[i];
+    if (i == EP_CACHE) i = ep_next++ % EP_CACHE;
+    ep_t *e = &eps[i];
+    free(e->title), free(e->show), free(e->artist), free(e->album_artist);
+    memset(e, 0, sizeof *e);
+    e->key = key, e->at = now;
+    char qn[320], qp[720], sql[1200];
+    void *db = ep_db;
+    if (!sql_quoted(qn, sizeof qn, name) || !sql_quoted(qp, sizeof qp, path)) return e;
+    if (!db && sqlite3_open(DATABASE, &db)) {
+        if (db) sqlite3_close(db);
+        return e;
+    }
+    tk_snprintf(sql, sizeof sql,
+                "select title,album,songer,ifnull(nullif(albumsonger,''),songer) from songtable"
+                " where filename='%s' and fileurl='%s' limit 1",
+                qn, qp);
+    sqlite3_exec(db, sql, ep_row, e, 0);
+    if (db != ep_db) sqlite3_close(db);
+    return e;
+}
+
+/* r's title as a row or Now Playing names an episode: the library's (its tag as the scan read it),
+ * else its own, else its file's name tidied (name_title). */
+static const char *ep_title(void *r, char *buf, unsigned size) {
+    ep_t *e = ep_of(r);
+    const char *own = P(r, REC_TITLE), *name = P(r, REC_NAME);
+    if (e && e->title && !name_only(e->title, name)) return e->title;
+    if (own && *own && !name_only(own, name)) return own;
+    name_title(name ? name : "", buf, size);
+    return buf;
+}
+
+/* r's show: the library's album, else its own, else its folder's name. */
+static const char *ep_show(void *r, char *buf, unsigned size) {
+    ep_t *e = ep_of(r);
+    const char *own = P(r, REC_ALBUM), *path = P(r, REC_PATH),
+               *slash = path ? strrchr(path, '/') : 0;
+    if (e && e->show) return e->show;
+    if (own && *own) return own;
+    buf[0] = 0;
+    if (slash && slash > path) {
+        const char *d = slash - 1;
+        while (d > path && *d != '/') --d;
+        if (*d == '/') ++d;
+        tk_snprintf(buf, size, "%.*s", (int)(slash - d), d);
+    }
+    return buf;
+}
+
+/* r's art for a row: Cover Flow's cover of its show (coverflow.c keys it by its album row's artist
+ * and album: the album artist's or the artist's, as the library has them), else stock's disc. */
+extern const char *coverflow_art_url(const char *artist, const char *album, char *out);
+static const char *ep_art(void *r, char *out) {
+    ep_t *e = ep_of(r);
+    const char *url = e && e->show ? coverflow_art_url(e->album_artist, e->show, out) : 0;
+    if (!url && e && e->show) url = coverflow_art_url(e->artist, e->show, out);
+    if (!url) url = coverflow_art_url(P(r, REC_ARTIST), P(r, REC_ALBUM), out);
+    return url ? url : "default_album_small";
+}
+
 /* A local track without a title of its own (a song played from Folder, as every Pocket episode is,
- * or an episode or a book whose title is only its file's name): the title the player reads from its file; until then, and for a
- * file without one, a spoken track's name as a title (name_title). Without an artist, a spoken
- * one's is its show (the album its file names), another's its file's. Now Playing, the lock screen and View Queue then name the
- * episode, not its file. Every UI pass: it is cheap, and the player reads a file's tags just as it
- * starts. */
+ * or an episode or a book whose title is only its file's name): the title the player reads from its
+ * file; else, for a spoken one, the library's (ep_of: what Library's Episodes show), else its name
+ * as a title (name_title). Without an artist, a spoken one's is its show (the album its file
+ * names), another's its file's. Now Playing, the lock screen and View Queue then name the episode,
+ * not its file. Every UI pass: it is cheap (the library asked once a track), and the player reads a
+ * file's tags just as it starts. */
 static void title_fill(void) {
     unsigned at, n;
     void *r = queue_now(&at, &n);
     if (!r || I(r, REC_TYPE) != 8 || !P(r, REC_PATH)) return;
-    const char *own = P(r, REC_TITLE), *artist = P(r, REC_ARTIST);
+    const char *own = P(r, REC_TITLE), *artist = P(r, REC_ARTIST), *name = P(r, REC_NAME);
     int named = pc.named && own == pc.named, voice = spoken(P(r, REC_PATH)), changed = 0;
-    if (!own || !*own || named || (voice && name_only(own, P(r, REC_NAME)))) {
+    if (!own || !*own || named || (voice && name_only(own, name))) {
         const char *tag = now_tag(r, REC_TITLE);
+        ep_t *e = voice ? ep_of(r) : 0;
         char buf[256];
-        if (tag != own && tag && *tag && !name_only(tag, P(r, REC_NAME))) { /* the player read it */
+        if (tag != own && tag && *tag && !name_only(tag, name)) { /* the player read it */
             changed = rec_set(r, REC_TITLE, tag) != 0;
             pc.named = 0;
-        } else if (!named && voice && P(r, REC_NAME)) {
-            name_title(P(r, REC_NAME), buf, sizeof buf);
+        } else if (e && e->title && !name_only(e->title, name)) { /* the library's */
+            changed = rec_set(r, REC_TITLE, e->title) != 0;
+            pc.named = 0;
+        } else if (!named && voice && name) {
+            name_title(name, buf, sizeof buf);
             changed = *buf && (pc.named = rec_set(r, REC_TITLE, buf)) != 0;
         }
     }
@@ -525,6 +682,396 @@ static void title_fill(void) {
     artist = P(r, REC_ARTIST);
     if (t && title && *title && (changed || !shows(t, title))) widget_set_text_utf8(t, title);
     if (a && artist && *artist && (changed || !shows(a, artist))) widget_set_text_utf8(a, artist);
+}
+
+/* ---- Finished episodes and deletes ---- */
+
+/* A line in DONE_FILE for q2-pocket: kind 'F' (finished) or 'D' (deleted), an episode's path under
+ * Podcasts. */
+static void done_note(char kind, const char *path) {
+    unsigned s[36] = { 0 };
+    char line[600];
+    if (!tk_str_start_with(path, PODCASTS) || (!__xstat(3, DONE_FILE, s) && s[12] >= DONE_MAX))
+        return;
+    int n = tk_snprintf(line, sizeof line, "%c\t%s\n", kind, path);
+    void *f = n > 0 && n < (int)sizeof line ? fopen(DONE_FILE, "a") : 0;
+    if (!f) return;
+    fwrite(line, 1, (unsigned)n, f);
+    fclose(f);
+}
+
+static unsigned delfin[DELFIN_N];
+static int delfin_read;
+static unsigned path_key(const char *path) {
+    return fnv(FNV_SEED, (const unsigned char *)path) | 1;
+}
+static int delfin_at(unsigned key) {
+    if (!delfin_read) BLOB_IO(DELFIN_FILE, delfin, 0), delfin_read = 1;
+    int i = 0;
+    while (i < DELFIN_N && delfin[i] != key) ++i;
+    return i < DELFIN_N ? i : -1;
+}
+
+/* Delete When Finished, r's: whether it is set. */
+int podcast_delfin(void *r) {
+    const char *path = r ? P(r, REC_PATH) : 0;
+    return path && delfin_at(path_key(path)) >= 0;
+}
+
+/* Delete When Finished set (on) or not on r, kept: the newest first, the oldest dropped if full. */
+void podcast_delfin_set(void *r, int on) {
+    const char *path = r ? P(r, REC_PATH) : 0;
+    if (!path) return;
+    unsigned key = path_key(path);
+    int i = delfin_at(key);
+    if (on == (i >= 0)) return;
+    if (on) {
+        for (i = DELFIN_N - 1; i > 0; --i) delfin[i] = delfin[i - 1];
+        delfin[0] = key;
+    } else {
+        for (; i < DELFIN_N - 1; ++i) delfin[i] = delfin[i + 1];
+        delfin[DELFIN_N - 1] = 0;
+    }
+    BLOB_IO(DELFIN_FILE, delfin, 1);
+}
+
+/* The transcript and description q2-pocket writes beside an episode go with it. */
+static void sidecars_gone(const char *path) {
+    const char *slash = strrchr(path, '/'), *dot = slash ? strrchr(slash, '.') : 0;
+    char f[720];
+    if (!slash) return;
+    int base = (int)((dot && dot > slash + 1 ? dot : slash + strlen(slash)) - path),
+        dir = (int)(slash - path);
+    tk_snprintf(f, sizeof f, "%.*s.lrc", base, path);
+    unlink(f);
+    tk_snprintf(f, sizeof f, "%.*s.LRC", base, path);
+    unlink(f);
+    tk_snprintf(f, sizeof f, "%.*s/.description/%.*s.txt", dir, path, base - dir - 1, slash + 1);
+    unlink(f);
+}
+
+/* path's file off the card with its sidecars, out of the library (rec, a row naming it: stock's
+ * delete by its name, path and CUE times, Cover Flow's lists then taken again) and out of the
+ * queue, every row of it but the playing one; q2-pocket told. Returns 0 when the file stays. */
+extern int coverflow_delete_song(void *a, void *b);
+static int file_gone(const char *path, void *rec) {
+    char own[600];
+    if (tk_snprintf(own, sizeof own, "%s", path) >= (int)sizeof own) return 0;
+    if (unlink(own) && !access(own, 0)) return 0;
+    sidecars_gone(own);
+    if (rec) coverflow_delete_song(rec, 0); /* before the queue's copy of it can go */
+    void *q = P(mcl_pdeqplaylist, 0);
+    for (unsigned i = q ? deque_size(q) : 0; i-- > 0;) {
+        const char *p = P(deque_at(q, i), REC_PATH);
+        if (p && !strcmp(p, own)) playback_drop(i);
+    }
+    done_note('D', own);
+    return 1;
+}
+
+/* The queue's row naming path, the playing one only when no other does, or 0. */
+static void *queue_row_of(const char *path) {
+    void *q = P(mcl_pdeqplaylist, 0), *found = 0;
+    unsigned pos = (unsigned)MCL(MCL_POS);
+    for (unsigned i = 0, n = q ? deque_size(q) : 0; i < n; ++i) {
+        const char *p = P(deque_at(q, i), REC_PATH);
+        if (p && !strcmp(p, path) && (!found || i != pos)) found = deque_at(q, i);
+    }
+    return found;
+}
+
+/* An episode played to its end (finish_poll): noted for q2-pocket, and gone when Delete When
+ * Finished was set on it. The one still at the queue's position (the queue ended on it) keeps its
+ * row, stopped there; its file and library row go. */
+static void finished(const char *path) {
+    char own[600];
+    if (tk_snprintf(own, sizeof own, "%s", path) >= (int)sizeof own) return;
+    done_note('F', own);
+    unsigned key = path_key(own);
+    int i = delfin_at(key);
+    if (i < 0) return;
+    for (; i < DELFIN_N - 1; ++i) delfin[i] = delfin[i + 1];
+    delfin[DELFIN_N - 1] = 0;
+    BLOB_IO(DELFIN_FILE, delfin, 1);
+    unsigned at, n;
+    void *now = queue_now(&at, &n), *rec = queue_row_of(own);
+    int gone;
+    if (rec && rec == now) {
+        gone = !unlink(own) || access(own, 0);
+        if (gone) sidecars_gone(own), coverflow_delete_song(rec, 0), done_note('D', own);
+    } else
+        gone = file_gone(own, rec);
+    if (g_backlight_status)
+        toast(gone ? "Finished episode deleted" : "Could not delete the episode");
+}
+
+/* The playing track as last seen: its path, key, place and length; done once it counted as
+ * finished (or was played again from earlier). Every POLL_MS: the track before, gone near its end
+ * (another track started, or the queue stopped there), was finished. A new track's first second
+ * may still be the last one's, so its place counts from the next look. */
+static struct {
+    char *path;
+    unsigned key;
+    int sec, total, done;
+} fin;
+static void finish_poll(void) {
+    unsigned at, n;
+    void *r = queue_now(&at, &n);
+    int sec = -1, total = 0;
+    int on = r && media_owner() == 1 && I(r, REC_TYPE) == 8 && P(r, REC_PATH) &&
+             !I(r, REC_CUE_START) && !I(r, REC_CUE_END) &&
+             player_playtime_and_length(&sec, &total) >= 0 && total > 0 && sec >= 0;
+    unsigned key = on ? listen_key(r) : 0;
+    if (on && key == fin.key) {
+        if (sec < total - FINISH_EDGE_S - 5) fin.done = 0; /* played again from further back */
+        fin.sec = sec, fin.total = total;
+        return;
+    }
+    if (fin.path && !fin.done && fin.total >= FINISH_MIN_S &&
+        fin.sec >= fin.total - FINISH_EDGE_S) {
+        fin.done = 1;
+        finished(fin.path);
+    }
+    if (!on) return;
+    free(fin.path);
+    fin.path = strdup(P(r, REC_PATH));
+    fin.key = key, fin.sec = 0, fin.total = total, fin.done = 0;
+}
+
+/* The Play/Pause hold menu's Delete File (navigation.c QA_DELETE) on Folder's song r, the user's
+ * (2026-11-15): asked first. The song playing goes as stock's own Delete Song takes it
+ * (delete_playqueue_file: its library row, the file, then the next track plays); any other as
+ * file_gone. The folder is listed again. */
+void podcast_delete(void *r) {
+    const char *p = r ? P(r, REC_PATH) : 0;
+    char path[600], name[300];
+    if (!p || tk_snprintf(path, sizeof path, "%s", p) >= (int)sizeof path) return;
+    struct {
+        int kind, ms;
+        char text[0x400];
+    } prompt = { 1, 0, "" };
+    tk_snprintf(prompt.text, sizeof prompt.text, "Delete \"%s\"?", ep_title(r, name, sizeof name));
+    st.confirm_verb = "Delete"; /* the confirm's second cell, as playlists.c's confirm_over */
+    int answer = navigator_to_with_context("dialog/confirminfo_dialog", &prompt);
+    st.confirm_verb = (const char *)0;
+    st.confirm_win = (void *)0;
+    if (answer != 10) return;
+    unsigned at, n;
+    void *now = queue_now(&at, &n);
+    int ok;
+    if (now && media_owner() == 1 && !strcmp(P(now, REC_PATH), path) && queue_row_of(path) == now) {
+        sidecars_gone(path);
+        done_note('D', path);
+        delete_playqueue_file(1);
+        ok = access(path, 0) != 0;
+    } else
+        ok = file_gone(path, r);
+    toast(ok ? "File deleted" : "Could not delete the file");
+    void *top = window_manager_get_top_window(window_manager());
+    if (top && !tk_strcmp(widget_get_prop_str(top, "name", ""), "folder_page")) {
+        folder_reload_data();
+        folder_refresh(top);
+    }
+}
+/* ---- Now Playing's pages ---- */
+
+/* The wheel on Description, Transcript and the Queue (the user's, 2026-11-15, as the lyrics page
+ * scrolled before the enhanced lyrics): while one of them is in front, lit and taller than its
+ * page, the wheel posts no ticks (wheel_raw) and its raw travel glides it, a tick's worth
+ * TEXT_ROW_PX on the text pages, a row on the Queue; anywhere else it keeps its ticks (the
+ * volume). raw: podcast.c took the wheel. The glide eases to `to` (1/16 px), as the lyrics' did. */
+static struct {
+    void *view;
+    int to, on, raw, travel;
+    unsigned at;
+} gl;
+
+/* Transcript as read for track: its paragraphs' starts (seconds) and texts (offsets into text,
+ * each nul-ended), n of them; built: those laid out so far, y the next one's top; lit: the one in
+ * white; held: the wheel or a finger moved it (until it leaves the front); set_y: the offset
+ * podcast.c last gave it. */
+static struct {
+    unsigned track, looked;
+    char *text;
+    int *sec, *off, n, built, y, lit, held, set_y;
+} tr;
+
+static int pages_gone(void *win, void *event) {
+    if (win != pc.win) return 0;
+    pc.win = pc.slide = pc.dots = pc.shelf = pc.desc_page = pc.desc_view = pc.desc_text = 0;
+    pc.ch_page = pc.ch_view = pc.q_page = pc.q_view = pc.tr_page = pc.tr_view = 0;
+    pc.bar = pc.line[0] = pc.line[1] = pc.front = 0;
+    if (gl.raw && wheel_raw == WHEEL_RAW) wheel_raw = WHEEL_TICKS;
+    gl.raw = gl.on = 0, gl.view = 0;
+    tr.built = tr.y = 0, tr.lit = -1; /* the next page lays it out again */
+    return 0;
+}
+
+/* The dots: a page each. */
+static void dots_count(void) {
+    if (pc.dots && pc.slide)
+        widget_set_prop_int(pc.dots, "max", (int)widget_count_children(pc.slide));
+}
+
+/* page into the slide_view at `at` (in, past its end: last) or back to the shelf. The page in front
+ * stays in front, or, when it is the one going, the one before it. Not while a finger is on the
+ * screen, where a swipe under way would jump. */
+static void page_put(void *page, int in, unsigned at) {
+    if (!page || !pc.shelf || !pc.slide || (P(page, W_PARENT) == pc.slide) == in || pointer_down())
+        return;
+    int front = widget_get_prop_int(pc.slide, "value", 0);
+    if (in) {
+        widget_remove_child(pc.shelf, page);
+        widget_add_child(pc.slide, page);
+        unsigned last = widget_count_children(pc.slide) - 1;
+        if (at < last)
+            widget_restack(page, at);
+        else
+            at = last;
+        if (front >= (int)at) widget_set_prop_int(pc.slide, "value", front + 1);
+    } else {
+        int idx = widget_index_of(page);
+        if (front >= idx && front > 0) widget_set_prop_int(pc.slide, "value", front - 1);
+        widget_remove_child(pc.slide, page);
+        widget_add_child(pc.shelf, page);
+    }
+    dots_count();
+    widget_invalidate_force(P(pc.slide, W_PARENT), 0);
+}
+
+/* ringnav_playing: the pages tools/ipod.py made (the art, Description, the Queue and the info in
+ * the slide_view; Chapters and Transcript in view_pc_shelf, hidden, until the episode has some:
+ * pages_poll), and the buttons beside the art. A page missing, or not where the build puts it,
+ * leaves its part out. */
+void podcast_attach(void *win) {
+    pc.slide = widget_lookup(win, "slide_view", 1);
+    if (!pc.slide) return;
+    pc.win = win;
+    pc.dots = widget_lookup(win, "slide_indicator1", 1);
+    pc.shelf = widget_lookup(win, "view_pc_shelf", 1);
+    /* stock's hit test skips insensitive widgets, not hidden ones: the hidden shelf over the pages
+     * would take every tap and swipe on them (tools/ipod.py also builds it so, off the screen) */
+    if (pc.shelf) widget_set_sensitive(pc.shelf, 0);
+    pc.desc_page = widget_lookup(win, "view_pc_desc", 1);
+    pc.desc_view = widget_lookup(win, "view_pc_desc_scroll", 1);
+    pc.desc_text = widget_lookup(win, "label_pc_desc", 1);
+    pc.ch_page = widget_lookup(win, "view_pc_chapters", 1);
+    pc.ch_view = widget_lookup(win, "view_pc_chapters_scroll", 1);
+    pc.q_page = widget_lookup(win, "view_pc_queue", 1);
+    pc.q_view = widget_lookup(win, "view_pc_queue_scroll", 1);
+    pc.tr_page = widget_lookup(win, "view_pc_transcript", 1);
+    pc.tr_view = widget_lookup(win, "view_pc_transcript_scroll", 1);
+    if (pc.ch_page && P(pc.ch_page, W_PARENT) != pc.shelf) pc.ch_page = 0; /* not this build's */
+    if (pc.tr_page && P(pc.tr_page, W_PARENT) != pc.shelf) pc.tr_page = 0;
+    pc.bar = widget_lookup(win, "slider_play", 1);
+    pc.q_sig = 0;
+    pc.line[0] = widget_lookup(win, "scrlabel_title", 1);
+    pc.line[1] = widget_lookup(win, "scrlabel_artist", 1);
+    pc.shown_desc = pc.shown_rows = ~0u;
+    pc.front = 0;
+    tr.built = tr.y = 0, tr.lit = -1, tr.held = 0;
+    for (int b = 0; b < B_N; ++b) {
+        void *w = widget_lookup(win, button_names[b], 1);
+        if (w) widget_on(w, EVT_CLICK, button_tap, (void *)(long)b);
+    }
+    dots_count();
+    skip_icons();
+    widget_on(win, EVT_DESTROY, pages_gone, win);
+    pc.polled = 0; /* podcast_poll fills them on its next pass */
+}
+
+/* A scroll view's animator (a drag's fling) stops, as navigation.c's lyric_still. */
+static void view_still(void *v) {
+    void *a = P(v, VIEW_ANIMATOR);
+    if (!a) return;
+    widget_animator_pause(a);
+    widget_animator_destroy(a);
+    P(v, VIEW_ANIMATOR) = (void *)0;
+}
+
+static int view_max(void *v) {
+    int m = I(v, VIEW_CONTENT_H) - I(v, W_H);
+    return m > 0 ? m : 0;
+}
+
+/* v jumps to y, nothing gliding or flung. */
+static void view_at(void *v, int y) {
+    view_still(v);
+    if (gl.view == v) gl.on = 0;
+    scroll_view_set_offset(v, I(v, SCROLL_X), y);
+    if (v == pc.tr_view) tr.set_y = y;
+}
+
+/* v glides to `to` (1/16 px) within its content; glide_step moves it, every UI pass. */
+static void glide_to(void *v, int to) {
+    int max = view_max(v) * 16;
+    view_still(v);
+    if (!gl.on || gl.view != v) gl.at = (unsigned)time_now_ms();
+    gl.view = v;
+    gl.to = to < 0 ? 0 : to > max ? max : to;
+    gl.on = 1;
+}
+
+/* A dt / (dt + GLIDE_EASE_MS) share of the way left, at least a pixel, so it eases in whatever the
+ * loop's pace; only while its page is in front. */
+static void glide_step(void *front) {
+    if (!gl.on || !gl.view || P(gl.view, W_PARENT) != front) {
+        gl.on = 0;
+        return;
+    }
+    unsigned now = (unsigned)time_now_ms();
+    int dt = (int)(now - gl.at), y = I(gl.view, SCROLL_Y), to = (gl.to + 8) >> 4;
+    gl.at = now;
+    if (to == y) {
+        gl.on = 0;
+        return;
+    }
+    if (dt > GLIDE_EASE_MS) dt = GLIDE_EASE_MS; /* a late pass: half the way, no leap */
+    int step = (to - y) * dt / (dt + GLIDE_EASE_MS);
+    y += step ? step : to > y ? 1 : -1;
+    scroll_view_set_offset(gl.view, I(gl.view, SCROLL_X), y);
+    if (gl.view == pc.tr_view) tr.set_y = y;
+}
+
+/* The wheel, every UI pass (wheel_raw's contract: playback.h). */
+static void wheel_poll(void *front) {
+    void *wm = window_manager(), *view = 0;
+    if (pc.win && front && g_backlight_status && window_manager_get_top_window(wm) == pc.win &&
+        !window_manager_is_animating(wm))
+        view = front == pc.desc_page ? pc.desc_view
+               : front == pc.tr_page ? pc.tr_view
+               : front == pc.q_page  ? pc.q_view
+                                     : 0;
+    if (view && !view_max(view)) view = 0; /* nothing to scroll: the wheel keeps the volume */
+    if (!view != !gl.raw) {
+        __sync_lock_test_and_set(&wheel_travel, 0);
+        gl.travel = 0;
+        if (view && wheel_raw == WHEEL_TICKS)
+            wheel_raw = WHEEL_RAW, gl.raw = 1;
+        else if (!view) {
+            if (gl.raw && wheel_raw == WHEEL_RAW) wheel_raw = WHEEL_TICKS;
+            gl.raw = 0;
+        }
+    }
+    int travel = gl.raw ? __sync_lock_test_and_set(&wheel_travel, 0) : 0;
+    if (!travel || !view) return;
+    unsigned now = (unsigned)time_now_ms();
+    st.last_input = now; /* no key event comes: the screen's timeout as for one */
+    reset_poweroptions_timer(1, 1, 1);
+    int unit = WHEEL_TICK_UNITS * 50 / wheel_pct(); /* a tick's travel at the Wheel Sensitivity */
+    if (view == pc.q_view) { /* a row a tick; x rises anticlockwise: back up the list */
+        gl.travel += travel;
+        int steps = gl.travel / unit;
+        gl.travel -= steps * unit;
+        if (!steps) return;
+        int from = gl.on && gl.view == view ? (gl.to + 8) >> 4 : I(view, SCROLL_Y);
+        glide_to(view, ((from + Q_ROW_H / 2) / Q_ROW_H - steps) * Q_ROW_H * 16);
+        return;
+    }
+    int from = gl.on && gl.view == view ? gl.to : I(view, SCROLL_Y) * 16;
+    glide_to(view, from - travel * TEXT_ROW_PX * 16 / unit);
+    if (view == pc.tr_view) tr.held = 1;
+    if (view == pc.desc_view) pc.desc_moved = 1;
 }
 
 /* A spoken track's description, beside it: <folder>/.description/<name>.txt (q2-pocket writes
@@ -555,91 +1102,310 @@ static void desc_load(void *r) {
     pc.desc = s;
 }
 
-static int pages_gone(void *win, void *event) {
-    if (win == pc.win)
-        pc.win = pc.slide = pc.dots = pc.desc_view = pc.desc_text = pc.ch_page = pc.ch_view =
-            pc.lyric = pc.shelf = pc.bar = pc.line[0] = pc.line[1] = pc.q_page = pc.q_view = 0;
-    return 0;
-}
-
-/* The dots: a page each, the transcript's too while it is in. */
-static void dots_count(void) {
-    if (pc.dots && pc.slide)
-        widget_set_prop_int(pc.dots, "max", (int)widget_count_children(pc.slide));
-}
-
-/* ringnav_playing: the pages tools/ipod.py made (the art, Description, Chapters and the info; the
- * lyrics in view_pc_shelf, hidden, until a track has some: transcript_poll), and the buttons beside
- * the art. A page missing leaves its part out. */
-void podcast_attach(void *win) {
-    pc.slide = widget_lookup(win, "slide_view", 1);
-    if (!pc.slide) return;
-    pc.win = win;
-    pc.dots = widget_lookup(win, "slide_indicator1", 1);
-    pc.desc_view = widget_lookup(win, "view_pc_desc_scroll", 1);
-    pc.desc_text = widget_lookup(win, "label_pc_desc", 1);
-    pc.ch_page = widget_lookup(win, "view_pc_chapters", 1);
-    pc.ch_view = widget_lookup(win, "view_pc_chapters_scroll", 1);
-    pc.lyric = widget_lookup(win, "view_lyric", 1);
-    pc.shelf = widget_lookup(win, "view_pc_shelf", 1);
-    /* stock's hit test skips insensitive widgets, not hidden ones: the hidden shelf over the pages
-     * would take every tap and swipe on them (tools/ipod.py also builds it so, off the screen) */
-    if (pc.shelf) widget_set_sensitive(pc.shelf, 0);
-    if (pc.lyric && P(pc.lyric, W_PARENT) != pc.shelf) pc.lyric = 0; /* not this build's page */
-    pc.bar = widget_lookup(win, "slider_play", 1);
-    pc.q_page = widget_lookup(win, "view_pc_queue", 1);
-    pc.q_view = widget_lookup(win, "view_pc_queue_scroll", 1);
-    pc.q_sig = 0;
-    pc.line[0] = widget_lookup(win, "scrlabel_title", 1);
-    pc.line[1] = widget_lookup(win, "scrlabel_artist", 1);
-    pc.lyric_at = (unsigned)time_now_ms();
-    pc.shown_desc = pc.shown_rows = ~0u;
-    for (int b = 0; b < B_N; ++b) {
-        void *w = widget_lookup(win, button_names[b], 1);
-        if (w) widget_on(w, EVT_CLICK, button_tap, (void *)(long)b);
-    }
-    dots_count();
-    skip_icons();
-    widget_on(win, EVT_DESTROY, pages_gone, win);
-    pc.polled = 0; /* podcast_poll fills them on its next pass */
-}
-
-/* The lyrics page, an episode's transcript (q2-pocket's .lrc beside it, which the player reads as
- * lyrics), in the slide_view last while the player has lyrics, else back in its hidden view; the
- * page in front when it goes, the one before it. */
-static void transcript_poll(unsigned now) {
-    void *page = pc.lyric;
-    if (!page || !pc.shelf) return;
-    int in = P(page, W_PARENT) == pc.slide, want = mclGetLyricSize() > 0;
-    if (want == in) pc.lyric_at = now;
-    if (want == in || (in && now - pc.lyric_at < TRANSCRIPT_GONE_MS)) return;
-    if (in) {
-        int last = (int)widget_count_children(pc.slide) - 1;
-        if (widget_get_prop_int(pc.slide, "value", 0) >= last)
-            widget_set_prop_int(pc.slide, "value", last - 1);
-        widget_remove_child(pc.slide, page);
-        widget_add_child(pc.shelf, page);
-    } else {
-        widget_remove_child(pc.shelf, page);
-        widget_add_child(pc.slide, page);
-    }
-    pc.lyric_at = now;
-    dots_count();
-    widget_invalidate_force(P(pc.slide, W_PARENT), 0);
-}
-
+/* Description: the text from DESC_TOP down (the user's, 2026-11-15: not so high), left-aligned. */
 static void desc_show(void) {
     void *t = pc.desc_text, *view = pc.desc_view;
-    int w = I(view, W_W) - 2 * PAGE_X, h = I(view, W_H);
+    int w = I(view, W_W) - 2 * PAGE_X, h = I(view, W_H) - DESC_TOP;
     widget_set_text_utf8(t, pc.desc ? pc.desc : "No description");
     widget_set_prop_str(t, "style:normal:text_align_h", pc.desc ? "left" : "center");
     widget_set_prop_str(t, "style:normal:text_align_v", pc.desc ? "top" : "middle");
     widget_set_prop_int(t, "style:normal:text_color", (int)(pc.desc ? 0xffffffffu : GREY));
-    widget_move_resize(t, PAGE_X, 0, w, h);
+    widget_move_resize(t, PAGE_X, pc.desc ? DESC_TOP : 0, w, pc.desc ? h : I(view, W_H));
     if (pc.desc) label_resize_to_content(t, (unsigned)w, (unsigned)w, (unsigned)h, 0x7fff);
-    widget_set_prop_int(view, "virtual_h", I(t, W_H) + (pc.desc ? PAGE_X : 0));
-    scroll_view_set_offset(view, 0, 0);
+    widget_set_prop_int(view, "virtual_h", pc.desc ? DESC_TOP + I(t, W_H) + PAGE_X : I(view, W_H));
+    view_at(view, 0);
 }
+
+/* Description starts at its top whenever it comes in front (the user's, 2026-11-15: a swipe's
+ * drag, or the last visit, left it further down): out of the front it goes back there, and for
+ * ARRIVE_MS after it comes in, unless the wheel or a finger has moved it since. */
+static void desc_top(void *front, unsigned now) {
+    void *v = pc.desc_view;
+    if (!v) return;
+    if (front == pc.desc_page && pointer_down() && now - pc.front_at > 100) pc.desc_moved = 1;
+    if (!I(v, SCROLL_Y) ||
+        (front == pc.desc_page && (pc.desc_moved || now - pc.front_at > ARRIVE_MS)))
+        return;
+    view_at(v, 0);
+}
+
+/* ---- Transcript ---- */
+
+static void transcript_drop(void) {
+    free(tr.text), free(tr.sec), free(tr.off);
+    tr.text = 0, tr.sec = tr.off = 0;
+    tr.n = tr.built = tr.y = tr.held = 0, tr.lit = -1;
+    if (pc.tr_view) widget_destroy_children(pc.tr_view);
+}
+
+/* "[mm:ss.xx]" at s: its seconds, s moved past every tag on the line; -1 for a line without one. */
+static int lrc_time(const char **s) {
+    const char *p = *s;
+    int sec = -1;
+    while (*p == '[' && p[1] >= '0' && p[1] <= '9') {
+        int m = 0, x = 0;
+        ++p;
+        while (*p >= '0' && *p <= '9') m = m * 10 + (*p++ - '0');
+        if (*p != ':') return -1;
+        ++p;
+        while (*p >= '0' && *p <= '9') x = x * 10 + (*p++ - '0');
+        while (*p && *p != ']' && *p != '\n') ++p;
+        if (*p != ']') return -1;
+        ++p;
+        if (sec < 0) sec = m * 60 + x;
+    }
+    *s = p;
+    return sec;
+}
+
+/* r's transcript: q2-pocket's timed .lrc beside it (a line a few words, as the cleaner wrote it),
+ * read as paragraphs of TR_PARA_MIN_S to TR_PARA_MAX_S. None: tr.n 0. */
+static void transcript_load(void *r) {
+    const char *path = P(r, REC_PATH), *slash = path ? strrchr(path, '/') : 0,
+               *dot = slash ? strrchr(slash, '.') : 0;
+    char file[620];
+    void *f = 0;
+    if (!slash) return;
+    int base = (int)((dot && dot > slash + 1 ? dot : slash + strlen(slash)) - path);
+    for (int k = 0; k < 2 && !f; ++k) {
+        tk_snprintf(file, sizeof file, k ? "%.*s.LRC" : "%.*s.lrc", base, path);
+        f = fopen(file, "rb");
+    }
+    char *raw = f ? calloc(1, TR_MAX + 1) : 0;
+    int n = raw ? (int)fread(raw, 1, TR_MAX, f) : 0;
+    if (f) fclose(f);
+    tr.text = n > 0 ? calloc(1, (unsigned)n + 2) : 0;
+    tr.sec = tr.text ? calloc(TR_PARAS, sizeof *tr.sec) : 0;
+    tr.off = tr.sec ? calloc(TR_PARAS, sizeof *tr.off) : 0;
+    if (!tr.off) {
+        free(raw);
+        transcript_drop();
+        return;
+    }
+    raw[n] = 0;
+    int o = 0, start = -1, end_sentence = 0;
+    for (const char *line = raw; *line;) {
+        const char *next = line, *s = line;
+        while (*next && *next != '\n') ++next;
+        int sec = lrc_time(&s);
+        while (s < next && *s == ' ') ++s;
+        const char *e = next;
+        while (e > s && (e[-1] == ' ' || e[-1] == '\r')) --e;
+        if (sec >= 0 && e > s) {
+            int fresh = start < 0 || sec - start >= TR_PARA_MAX_S ||
+                        (end_sentence && sec - start >= TR_PARA_MIN_S);
+            if (fresh && tr.n == TR_PARAS) break;
+            if (fresh) {
+                if (start >= 0) tr.text[o++] = 0;
+                tr.sec[tr.n] = sec, tr.off[tr.n++] = o, start = sec;
+            } else
+                tr.text[o++] = ' ';
+            memcpy(tr.text + o, s, (unsigned)(e - s));
+            o += (int)(e - s);
+            char last = e[-1];
+            if ((last == '"' || last == '\'' || last == ')') && e - 1 > s) last = e[-2];
+            end_sentence = last == '.' || last == '?' || last == '!';
+        }
+        line = *next ? next + 1 : next;
+    }
+    free(raw);
+    if (!tr.n) transcript_drop();
+}
+
+/* TR_BUILD_PASS more paragraphs laid out, each a wrapped label in Description's text, grey. */
+static void transcript_build(void) {
+    int w = I(pc.tr_view, W_W) - 2 * PAGE_X;
+    if (!tr.built) tr.y = DESC_TOP;
+    for (int k = 0; k < TR_BUILD_PASS && tr.built < tr.n; ++k, ++tr.built) {
+        void *t = label_create(pc.tr_view, PAGE_X, tr.y, w, TEXT_ROW_PX);
+        widget_use_style(t, "s_label_white20c");
+        widget_set_prop_int(t, "line_wrap", 1);
+        widget_set_prop_int(t, "word_wrap", 1);
+        widget_set_prop_int(t, "style:normal:font_size", 16);
+        widget_set_prop_str(t, "style:normal:text_align_h", "left");
+        widget_set_prop_str(t, "style:normal:text_align_v", "top");
+        widget_set_prop_int(t, "style:normal:text_color", (int)GREY);
+        widget_set_text_utf8(t, tr.text + tr.off[tr.built]);
+        label_resize_to_content(t, (unsigned)w, (unsigned)w, TEXT_ROW_PX, 0x7fff);
+        tr.y += I(t, W_H) + TR_GAP;
+    }
+    widget_set_prop_int(pc.tr_view, "virtual_h", tr.y - TR_GAP + PAGE_X);
+}
+
+/* The paragraph playing in white; the page follows it (its top DESC_TOP under the page's), gliding
+ * in front and jumping elsewhere, unless the wheel or a finger holds it there, which lasts until
+ * the page leaves the front. */
+static void transcript_follow(void *front, unsigned now) {
+    void *v = pc.tr_view;
+    int here = front == pc.tr_page, sec = np_second(), i = -1;
+    if (!here)
+        tr.held = 0;
+    else if (pointer_down() && now - pc.front_at > HOLD_TOUCH_MS && I(v, SCROLL_Y) != tr.set_y)
+        tr.held = 1;
+    while (sec >= 0 && i + 1 < tr.built && tr.sec[i + 1] <= sec) ++i;
+    if (i != tr.lit && g_backlight_status) {
+        for (int k = 0; k < 2; ++k) {
+            int at = k ? i : tr.lit;
+            void *t = at >= 0 && at < tr.built ? widget_get_child(v, (unsigned)at) : 0;
+            if (!t) continue;
+            widget_set_prop_int(t, "style:normal:text_color", (int)(k ? 0xffffffffu : GREY));
+            widget_invalidate_force(t, 0);
+        }
+        tr.lit = i;
+    }
+    if (tr.held || i < 0 || pointer_down()) return;
+    int to = I(widget_get_child(v, (unsigned)i), W_Y) - DESC_TOP, max = view_max(v);
+    if (to > max) to = max;
+    if (to < 0) to = 0;
+    if (!here) {
+        if (I(v, SCROLL_Y) != to) view_at(v, to);
+    } else if (!(gl.on && gl.view == v && gl.to == to * 16) && I(v, SCROLL_Y) != to)
+        glide_to(v, to * 16);
+}
+
+/* Transcript (the user's, 2026-11-15: read as Description is, not as lyrics): its page in the
+ * slide_view, last, while the episode has one, its text read once a track (looked for again while
+ * missing: q2-pocket may write it later) and laid out a few paragraphs a pass. */
+static void transcript_poll(void *r, void *front, unsigned now) {
+    if (!pc.tr_page || !pc.tr_view) return;
+    if (pc.track != tr.track) {
+        transcript_drop();
+        tr.track = pc.track, tr.looked = 0;
+    }
+    if (!tr.n && r && spoken(P(r, REC_PATH)) && (!tr.looked || now - tr.looked >= TR_LOOK_MS)) {
+        tr.looked = now | 1;
+        transcript_load(r);
+    }
+    page_put(pc.tr_page, tr.n > 0, ~0u);
+    if (!tr.n || P(pc.tr_page, W_PARENT) != pc.slide) return;
+    if (tr.built < tr.n) transcript_build();
+    transcript_follow(front, now);
+}
+/* ---- The Queue ---- */
+
+/* An episode's row (the user's, 2026-11-15, as Library's Episodes): the show's art, the title over
+ * the show, h high and w wide at y in view; the playing one (lead 0) says so, and an Up Next row
+ * has its arrows at its end, up unless it is first, down unless last. The arrows are drawn in the
+ * row, not widgets of their own (a list's wheel would stop on them): a tap on them is told by where
+ * it lands (podcast_row_arrow). Shared with upnext.c's View Queue. */
+void *podcast_row(void *view, int y, int w, int h, void *r, int lead, int up, int down) {
+    char title[256], show[160], line[200], url[600];
+    void *item = list_item_create(view, 0, y, w, h);
+    widget_use_style(item, "s_listitem_black");
+    int art = h - 12 < Q_ART ? h - 12 : Q_ART, text_x = PAGE_X + art + 10,
+        text_w = w - text_x - (lead ? 2 * ARROW_W : PAGE_X), top = (h - 44) / 2;
+    void *a = image_create(item, PAGE_X, (h - art) / 2, art, art);
+    image_set_draw_type(a, 4); /* scale_auto, as the stock cover rows */
+    image_base_set_image(a, ep_art(r, url));
+    void *t = label(item, text_x, top, text_w, 24, "s_scrlabel_white20l", 18, 0xffffffffu);
+    widget_set_text_utf8(t, ep_title(r, title, sizeof title));
+    const char *s = ep_show(r, show, sizeof show);
+    if (!lead) tk_snprintf(line, sizeof line, *s ? "Now Playing · %s" : "Now Playing", s), s = line;
+    widget_set_text_utf8(label(item, text_x, top + 24, text_w, 20, "s_scrlabel_white20l", 15, GREY),
+                         s);
+    for (int k = 0; lead && k < 2; ++k) {
+        if (k ? !down : !up) continue;
+        void *arrow = image_create(item, w - (2 - k) * ARROW_W, 0, ARROW_W, h);
+        image_base_set_image(arrow, k ? "play_qdown" : "play_qup");
+        image_set_draw_type(arrow, IMAGE_DRAW_CENTER);
+    }
+    return item;
+}
+
+/* A tap on row item (EVT_CLICK): -1 on its up arrow, 1 on its down arrow, else 0 (a Centre press's
+ * click lands on the row's start). */
+int podcast_row_arrow(void *item, void *event) {
+    if (!item || !event) return 0;
+    int xy[2] = { I(event, EVENT_X), I(event, EVENT_Y) }, w = I(item, W_W);
+    widget_to_local(item, xy);
+    return xy[0] < w - 2 * ARROW_W || xy[0] >= w ? 0 : xy[0] < w - ARROW_W ? -1 : 1;
+}
+
+/* The playing local track's row, or 0: the queue's at its position, whatever the play status
+ * (the user's, 2026-11-15: a paused or stopped queue said "Nothing playing"). */
+static void *queue_lead(void) {
+    unsigned at, n, type = (unsigned)MCL(MCL_TYPE);
+    if (media_owner() != 1 || (type != 1 && (type & 0xf000) != 0xf000)) return 0;
+    return queue_now(&at, &n);
+}
+
+/* The Queue page's tap on a row (ctx: its place, 0 the playing one): an arrow moves it
+ * (playback_raise: up swaps it with the row before, down with the row after); elsewhere on an Up
+ * Next row that episode plays and the one playing goes first in Up Next (playback_play_swap), as
+ * Pocket Casts' Up Next does; on the playing one, back to the art. */
+static int queue_tap(void *ctx, void *event) {
+    int k = (int)(long)ctx,
+        arrow = k && event ? podcast_row_arrow(P(event, EVENT_TARGET), event) : 0;
+    void *q = P(mcl_pdeqplaylist, 0);
+    if (!k) {
+        if (pc.slide) widget_set_prop_int(pc.slide, "value", 0);
+        return 0;
+    }
+    if (k < 0 || (unsigned)k > pc.q_n || !q) return 0;
+    if (arrow) {
+        if (!playback_raise(arrow < 0 ? (unsigned)k - 1 : (unsigned)k))
+            toast("This queue can't be reordered");
+    } else {
+        int at = playback_play_swap(pc.q_idx[k - 1]);
+        if (at < 0 && pc.q_idx[k - 1] != (unsigned)MCL(MCL_POS) && pc.q_idx[k - 1] < deque_size(q))
+            at = (int)pc.q_idx[k - 1]; /* a queue not ours to reorder: stock's pick */
+        if (at >= 0) press_stamp(), player_start_queue(at);
+    }
+    pc.q_sig = 0; /* shown again */
+    return 0;     /* a STOP would keep the slide_view's grab (rate_fav_click) */
+}
+
+/* The queue as the page would show it: the playing track, Up Next's indices, the queue. */
+static unsigned queue_sign(unsigned *idx, unsigned *n) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    *n = q ? playback_queue_rows(idx, QUEUE_ROWS) : 0;
+    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)idx, *n * sizeof *idx);
+    unsigned at[3] = { (unsigned)MCL(MCL_POS), q ? deque_size(q) : 0u, queue_lead() != 0 };
+    h = hash_bytes(h, (const unsigned char *)at, sizeof at);
+    return h | 1;
+}
+
+/* The Queue page: the playing episode first, then Up Next in the order it plays, each a
+ * podcast_row. Built again when the queue, its order or the playing track changes (its scroll
+ * kept), and once more EP_RETRY_MS on while a row lacked the library's title. */
+static void queue_show(unsigned now) {
+    unsigned idx[QUEUE_ROWS], n, sig = queue_sign(idx, &n);
+    if (pc.q_again && now - pc.q_again < 0x80000000u) pc.q_again = 0, pc.q_sig = 0;
+    if (sig == pc.q_sig) return;
+    pc.q_sig = sig;
+    pc.q_n = n;
+    memcpy(pc.q_idx, idx, n * sizeof *idx);
+    void *view = pc.q_view, *q = P(mcl_pdeqplaylist, 0), *lead = queue_lead();
+    int w = I(view, W_W), h = I(view, W_H), y = 0, keep = I(view, SCROLL_Y), missing = 0;
+    widget_destroy_children(view);
+    if (gl.view == view) gl.on = 0;
+    ep_batch(1);
+    if (lead) {
+        widget_on(podcast_row(view, 0, w, Q_ROW_H, lead, 0, 0, 0), EVT_CLICK, queue_tap, (void *)0);
+        y = Q_ROW_H;
+    }
+    for (unsigned i = 0; i < n; ++i) {
+        void *r = idx[i] < deque_size(q) ? deque_at(q, idx[i]) : 0;
+        if (!r) continue;
+        ep_t *e = ep_of(r);
+        missing |= !e || !e->title;
+        widget_on(podcast_row(view, y, w, Q_ROW_H, r, (int)i + 1, i > 0, i + 1 < n), EVT_CLICK,
+                  queue_tap, (void *)(long)(i + 1));
+        y += Q_ROW_H;
+    }
+    ep_batch(0);
+    if (!n) {
+        void *none = label(view, PAGE_X, y, w - 2 * PAGE_X, h - y > Q_ROW_H ? Q_ROW_H : h - y,
+                           "s_scrlabel_white20c", 16, GREY);
+        widget_set_text_utf8(none, lead ? "Nothing after this one" : "Nothing playing");
+        y += Q_ROW_H;
+    }
+    widget_set_prop_int(view, "virtual_h", y > h ? y : h);
+    if (keep) scroll_view_set_offset(view, 0, keep < view_max(view) ? keep : view_max(view));
+    pc.q_again = missing ? (now + EP_RETRY_MS) | 1 : 0;
+}
+
+/* ---- Chapters ---- */
 
 static int chapter_tap(void *ctx, void *event) {
     int i = (int)(long)ctx;
@@ -655,10 +1421,8 @@ static void rows_show(void) {
     pc.lit = -1;
     pc.shown_count = n;
     if (!n) {
-        void *none = label(view, PAGE_X, 0, w - 2 * PAGE_X, h, "s_scrlabel_white20c", 16, GREY);
-        widget_set_text_utf8(none, pc.state == CH_DONE ? "No chapters" : "Reading chapters…");
         widget_set_prop_int(view, "virtual_h", h);
-        return;
+        return; /* the page is out (pages_poll) */
     }
     for (int i = 0; i < n; ++i) {
         chapter *c = &pc.rows[i];
@@ -702,105 +1466,23 @@ static void rows_light(void) {
     }
 }
 
-/* A queued track's title for the Queue page: its own, else its file's name as a title. */
-static const char *queue_title(void *r, char *buf, unsigned size) {
-    const char *own = P(r, REC_TITLE), *name = P(r, REC_NAME);
-    if (own && *own && !name_only(own, name)) return own;
-    name_title(name ? name : "", buf, size);
-    return buf;
-}
-
-/* The Queue page's tap on a row (ctx: its place, 0 the playing track): that track plays, and the one
- * playing goes first in Up Next (playback_play_swap), as Pocket Casts' Up Next does. */
-static int queue_tap(void *ctx, void *event) {
-    int k = (int)(long)ctx;
-    void *q = P(mcl_pdeqplaylist, 0);
-    if (k <= 0 || (unsigned)k > pc.q_n || !q) return 0;
-    unsigned at = pc.q_idx[k - 1];
-    if (at >= deque_size(q)) return 0;
-    playback_play_swap(at);
-    press_stamp();
-    player_start_queue((int)at);
-    pc.q_sig = 0; /* shown again */
-    return 0;
-}
-
-/* A Queue row's arrow (ctx: the Up Next row, negative for its down arrow): it swaps with the row
- * above or below (playback_raise). */
-static int queue_arrow(void *ctx, void *event) {
-    int k = (int)(long)ctx;
-    if (!playback_raise(k < 0 ? (unsigned)(-k) : (unsigned)k)) toast("This queue can't be reordered");
-    pc.q_sig = 0;
-    return 0;
-}
-
-/* The queue as the page would show it: the playing track, Up Next's indices, the queue. */
-static unsigned queue_sign(unsigned *idx, unsigned *n) {
-    void *q = P(mcl_pdeqplaylist, 0);
-    *n = q ? playback_queue_rows(idx, QUEUE_ROWS) : 0;
-    unsigned h = hash_bytes(FNV_SEED, (const unsigned char *)idx, *n * sizeof *idx);
-    unsigned at[2] = { (unsigned)MCL(MCL_POS), q ? deque_size(q) : 0u };
-    h = hash_bytes(h, (const unsigned char *)at, sizeof at);
-    return h | 1;
-}
-
-/* The Queue page: the playing track first, in white, then Up Next in the order it plays, each with
- * an up and a down arrow beside it (none up on the first, none down on the last). A tap plays a row
- * (queue_tap). Built again when the queue, its order or the playing track changes. */
-static void queue_show(void) {
-    unsigned idx[QUEUE_ROWS], n, sig = queue_sign(idx, &n);
-    if (sig == pc.q_sig) return;
-    pc.q_sig = sig;
-    pc.q_n = n;
-    memcpy(pc.q_idx, idx, n * sizeof *idx);
-    void *view = pc.q_view, *q = P(mcl_pdeqplaylist, 0), *now = local_now();
-    int w = I(view, W_W), h = I(view, W_H), y = 0;
-    char buf[256];
-    widget_destroy_children(view);
-    if (now) {
-        void *item = list_item_create(view, 0, 0, w, ROW_H);
-        widget_use_style(item, "s_listitem_black");
-        void *t = label(item, PAGE_X, 0, w - 2 * PAGE_X, ROW_H, "s_scrlabel_white20l", 16, 0xffffffffu);
-        widget_set_text_utf8(t, queue_title(now, buf, sizeof buf));
-        y = ROW_H;
-    }
-    if (!n) {
-        void *none = label(view, PAGE_X, y, w - 2 * PAGE_X, h - y, "s_scrlabel_white20c", 16, GREY);
-        widget_set_text_utf8(none, now ? "Nothing after this one" : "Nothing playing");
-    }
-    for (unsigned i = 0; i < n; ++i, y += ROW_H) {
-        void *item = list_item_create(view, 0, y, w - 2 * ARROW_W, ROW_H);
-        widget_use_style(item, "s_listitem_black");
-        void *t = label(item, PAGE_X, 0, w - 2 * ARROW_W - PAGE_X, ROW_H, "s_scrlabel_white20l", 16, GREY);
-        widget_set_text_utf8(t, idx[i] < deque_size(q) ? queue_title(deque_at(q, idx[i]), buf, sizeof buf) : "");
-        widget_on(item, EVT_CLICK, queue_tap, (void *)(long)(i + 1));
-        for (int down = 0; down < 2; ++down) {
-            if (down ? i + 1 == n : !i) continue;
-            void *a = image_create(view, w - (2 - down) * ARROW_W, y, ARROW_W, ROW_H);
-            image_base_set_image(a, down ? "play_qdown" : "play_qup");
-            image_set_draw_type(a, IMAGE_DRAW_CENTER);
-            widget_set_prop_str(a, "clickable", "true");
-            widget_on(a, EVT_CLICK, queue_arrow, (void *)(long)(down ? -(int)(i + 1) : (int)i));
-        }
-    }
-    widget_set_prop_int(view, "virtual_h", y > h ? y : h);
-}
-
-/* The title and the show span the progress bar, as wide as it is (navigation.c narrows it for a
- * long track's times), whatever stock's page code makes them. */
+/* The title and the show span the progress bar, as wide as it is, whatever stock's page code makes
+ * them. */
 static void rows_span(void) {
     if (!pc.bar) return;
     int x = I(pc.bar, W_X), w = I(pc.bar, W_W);
     for (int i = 0; i < 2; ++i) {
         void *t = pc.line[i];
-        if (t && (I(t, W_X) != x || I(t, W_W) != w)) widget_move_resize(t, x, I(t, W_Y), w, I(t, W_H));
+        if (t && (I(t, W_X) != x || I(t, W_W) != w))
+            widget_move_resize(t, x, I(t, W_Y), w, I(t, W_H));
     }
 }
 
 static void pages_poll(void *r, unsigned now) {
     if (!pc.win) return;
     rows_span();
-    if (pc.q_view) queue_show();
+    void *front = np_front();
+    if (pc.q_view) queue_show(now);
     if (pc.desc_view && pc.desc_text && pc.shown_desc != pc.track) {
         pc.shown_desc = pc.track;
         desc_load(r);
@@ -811,13 +1493,20 @@ static void pages_poll(void *r, unsigned now) {
         pc.shown_rows = rows;
         rows_show();
     }
-    if (pc.ch_view && pc.ch_page && g_backlight_status) rows_light();
-    transcript_poll(now);
+    /* Chapters (the user's, 2026-11-15): a page, and a dot, only for an episode with chapters,
+     * after Description */
+    if (pc.ch_page)
+        page_put(pc.ch_page, pc.shown_count > 0,
+                 pc.desc_page && P(pc.desc_page, W_PARENT) == pc.slide
+                     ? (unsigned)widget_index_of(pc.desc_page) + 1
+                     : 1);
+    if (pc.ch_view && pc.ch_page && pc.shown_count && g_backlight_status) rows_light();
+    transcript_poll(r, front, now);
 }
 
-/* Every UI pass (ringnav_sleep): the chapters' reader, the playing track's title and the star, then
- * every POLL_MS the track: another one's description and, once a spoken one has played
- * CHAPTER_DELAY_MS, its chapters; and the pages. */
+/* Every UI pass (ringnav_sleep): the chapters' reader, the playing track's title and the star, the
+ * wheel's glide, then every POLL_MS the track: another one's description and, once a spoken one has
+ * played CHAPTER_DELAY_MS, its chapters; whether the last one finished; and the pages. */
 void podcast_poll(void) {
     if (pc.reading && chapters_poll(pc.reading, time_now_ms())) {
         chapters *c = pc.reading;
@@ -840,11 +1529,20 @@ void podcast_poll(void) {
         free(c);
     }
     title_fill();
+    void *front = pc.win ? np_front() : 0;
     unsigned now = (unsigned)time_now_ms(), at, n;
+    wheel_poll(front);
+    glide_step(front);
+    if (pc.win) { /* every pass: a swipe's arrival is caught within ARRIVE_MS, not a POLL_MS later
+                   */
+        if (front != pc.front) pc.front = front, pc.front_at = now, pc.desc_moved = 0;
+        desc_top(front, now);
+    }
     if (now - pc.polled < POLL_MS && pc.polled) return;
     pc.polled = now;
     void *r = queue_now(&at, &n);
     track_check(r, now);
+    finish_poll();
     /* read for Now Playing's page once the track has played a moment, or at once for a hold */
     if (r && pc.state == CH_NONE && !pc.reading &&
         ((pc.win && now - pc.since >= CHAPTER_DELAY_MS) || pc.want))
@@ -884,14 +1582,46 @@ static void skip_rows(void *view) {
     }
 }
 
-/* Now Playing's ⋯ page (onlinematch.c ringnav_playermore), Q2 Podcast's (the user's, 2026-11-12):
- * stock's Download Cover & Lyrics and Look up Artist go, Look up Album is Look up Podcast (an
- * episode's album is its show), and the skip lengths follow. view holds stock's PLAYMORE_COUNT rows,
- * by position (PLAYMORE_ROWS gives each its kind); stock's click reads a row's kind from its
- * button's name, so the rows left keep theirs. */
+/* The ⋯ page's Queue row: Q2 Podcast's View Queue (upnext.c), the episodes as Now Playing's Queue
+ * page shows them, not stock's list of files. */
+extern void up_next(int (*keyup)(void *, void *));
+static int more_queue(void *ctx, void *event) {
+    up_next(page_keyup);
+    return 0;
+}
+
+/* The ⋯ page's Delete When Finished row (ctx: its label): the playing episode's, turned over. */
+static int more_delfin(void *ctx, void *event) {
+    void *r = queue_lead();
+    if (!r) return 0;
+    podcast_delfin_set(r, !podcast_delfin(r));
+    list_toggle(ctx, "Delete When Finished", podcast_delfin(r));
+    return 0;
+}
+
+/* A stock row's icon (its button's first image), else fallback. */
+static const char *row_icon(void *row, const char *fallback) {
+    void *button = widget_count_children(row) ? widget_get_child(row, 0) : 0;
+    for (unsigned j = 0, k = button ? widget_count_children(button) : 0; j < k; ++j) {
+        void *c = widget_get_child(button, j);
+        const char *img =
+            tk_strcmp(widget_get_type(c), "image") ? 0 : widget_get_prop_str(c, "image", "");
+        if (img && *img) return img;
+    }
+    return fallback;
+}
+
+/* Now Playing's ⋯ page (onlinematch.c ringnav_playermore), Q2 Podcast's (the user's, 2026-11-12 and
+ * 2026-11-15): stock's Download Cover & Lyrics and Look up Artist go, Look up Album is Look up
+ * Podcast (an episode's album is its show), Queue opens View Queue's episodes (more_queue), and
+ * the skip lengths and Delete When Finished follow. view holds stock's PLAYMORE_COUNT rows, by
+ * position (PLAYMORE_ROWS gives each its kind); stock's click reads a row's kind from its button's
+ * name, so the rows left keep theirs, and ours are unnamed. */
 void podcast_more(void *view) {
     void *gone[PLAYMORE_COUNT];
     unsigned n = 0;
+    char icon[32] = "";
+    int queue_at = -1;
     for (unsigned i = 0; i < PLAYMORE_COUNT && i < widget_count_children(view); ++i) {
         int kind = ((const int *)PLAYMORE_ROWS)[i];
         void *row = widget_get_child(view, i);
@@ -899,11 +1629,32 @@ void podcast_more(void *view) {
             gone[n++] = row;
         else if (kind == PLAYMORE_ALBUM)
             stock_row_as(row, 0, "Look up Podcast");
+        else if (kind == PLAYMORE_QUEUE) {
+            gone[n++] = row;
+            queue_at = (int)i;
+            tk_snprintf(icon, sizeof icon, "%s", row_icon(row, "player_playlist"));
+        }
+    }
+    if (queue_at >= 0) { /* ours in its place, before stock's goes */
+        void *label = list_row(view, icon, more_queue, 0);
+        widget_use_style(label, "s_scrlabel_white20l");
+        widget_resize(label, 253, I(label, W_H));
+        widget_set_text_utf8(label, "Queue");
+        void *item = P(P(label, W_PARENT), W_PARENT);
+        /* it opens a page, as stock's did: stock_more_into's mark, for a selected-only chevron */
+        if (theme()->chevron_sel) widget_set_visible(image_create(item, 302, 0, 50, 0), 0, 0);
+        widget_restack(item, (unsigned)queue_at);
     }
     for (unsigned i = 0; i < n; ++i) widget_destroy(gone[i]);
     skip_rows(view);
+    void *r = queue_lead();
+    if (r && spoken(P(r, REC_PATH))) {
+        void *label = list_row(view, "player_delete", 0, 0);
+        widget_on(P(label, W_PARENT), EVT_CLICK, more_delfin, label);
+        widget_use_style(label, "s_scrlabel_white20l");
+        list_toggle(label, "Delete When Finished", podcast_delfin(r));
+    }
 }
 
 /* Playback settings (navigation.c ringnav_audioset): the skip lengths, last. */
 void podcast_playback_rows(void *view) { skip_rows(view); }
-

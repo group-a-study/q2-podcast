@@ -569,9 +569,9 @@ int pl_first(menu_t *m, int cur);
 void pl_fit(void *button);
 
 /* podcast.c: the side buttons on a spoken track (ringnav_keydown, ringnav, ringnav_keylong), Now
- * Playing's buttons, its Description, Chapters and transcript pages and the poll filling them, the
- * star as Pocket Casts' (ratings.c, whose rate_fav_match keeps My Fav in step) and a Folder play's
- * title. navigation.c's spoken track, its seek, its second and its pages for them. */
+ * Playing's buttons, its Description, Chapters, Queue and Transcript pages and the poll filling
+ * them, the star as Pocket Casts' (ratings.c, whose rate_fav_match keeps My Fav in step) and a
+ * Folder play's title. navigation.c's spoken track, its seek, its second and its pages for them. */
 int podcast_key(unsigned key, int phase);
 void podcast_attach(void *win);
 void podcast_poll(void);
@@ -588,6 +588,13 @@ int skip_index(int fwd);
 void skip_set(int fwd, int s);
 int skip_cycle(int fwd);
 void skip_label(int fwd, char *out, unsigned size);
+/* The hold menu's Delete File (a Folder song) and Delete When Finished (an episode); Now Playing's
+ * Queue rows, shared with upnext.c's View Queue */
+void podcast_delete(void *r);
+int podcast_delfin(void *r);
+void podcast_delfin_set(void *r, int on);
+void *podcast_row(void *view, int y, int w, int h, void *r, int lead, int up, int down);
+int podcast_row_arrow(void *item, void *event);
 int spoken(const char *path);
 void np_seek(int to);
 int np_second(void);

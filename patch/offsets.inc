@@ -680,6 +680,7 @@ static inline int arc_out(int r, int y) {
 #define PLAYMORE_ROWS 0x7728a0
 #define PLAYMORE_COUNT 8
 #define PLAYMORE_SEARCH 4 /* Download Cover & Lyrics */
+#define PLAYMORE_QUEUE 2  /* Queue (playerqueue_page): Q2 Podcast opens View Queue instead (podcast.c) */
 #define PLAYMORE_ALBUM 5  /* Look up Album (get_playmore_showinfo's player_albuminfo) */
 #define PLAYMORE_ARTIST 6 /* Look up Artist (player_songerinfo) */
 #define PLAYMORE_INTO_FIRST 2

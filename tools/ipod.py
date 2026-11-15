@@ -838,18 +838,20 @@ def playing_stock(data):
         else:
             side.append(['image', [x, y, PC_BTN, PC_BTN], {'name': name, 'image': image, 'draw_type': 'center',
                                                           'clickable': 'true'}, []])
-    # The title and the show span the progress bar (PC_BAR_X, PC_BAR_W; podcast.c keeps them to it as it narrows
-    # for a long track), each scrolling to its end and back (yoyo: the marquee's hold at either end, lull 0).
+    # The title and the show span the progress bar (PC_BAR_X, PC_BAR_W; podcast.c keeps them to it), each scrolling
+    # to its end and back (yoyo: the marquee's hold at either end, lull 0).
     title[1] = [PC_BAR_X, PC_ART + PC_TEXT_GAP, PC_BAR_W, PC_TITLE_H]
     artist[1] = [PC_BAR_X, PC_ART + PC_TEXT_GAP + PC_TITLE_H, PC_BAR_W, PC_ARTIST_H]
     for row in (title, artist):
         row[2].update(loop='true', yoyo='true', lull='0')
     named['view_album'][3] += [title, artist, *side]
     root[3][1:3] = []
-    # The pages: the art, Description, Chapters, the Queue, the info (its stock 225 px column centred on the screen),
-    # then the lyrics, which wait in a hidden view beside the slide_view (view_pc_shelf) until a track has some: podcast.c
-    # moves them in and out. Stock finds them all by name. Description is a wrapped label in a scroll_view, Chapters
-    # a scroll_view podcast.c fills with a row a chapter.
+    # The pages: the art, Description, the Queue and the info (its stock 225 px column centred on the screen). Chapters
+    # and Transcript wait in a hidden view beside the slide_view (view_pc_shelf) until the episode has some (the user's,
+    # 2026-11-15: no page, and no dot, for what isn't there): podcast.c moves Chapters in after Description and
+    # Transcript in last. Stock's lyrics page waits there for good (stock finds it by name): an episode's transcript is
+    # Transcript's text, as Description's. Description is a wrapped label in a scroll_view, its first line PC_DESC_TOP
+    # down; Chapters, the Queue and Transcript are scroll_views podcast.c fills.
     slide_h = PC_ART + PC_TEXT_GAP + PC_TITLE_H + PC_ARTIST_H
     album_page, lyric_page, info_page = named['slide_view'][3]
 
@@ -858,12 +860,11 @@ def playing_stock(data):
         return ['view', [0, 0, 375, slide_h], {'name': name, 'self_layout': fill}, [
             ['scroll_view', [0, 0, 375, slide_h], {'name': name + '_scroll', 'self_layout': fill, 'xslidable': 'false',
                                                    'yslidable': 'true'}, children]]]
-    desc = scroll_page('view_pc_desc', [['label', [NP_MARGIN, 0, 375 - 2 * NP_MARGIN, slide_h], {
+    desc = scroll_page('view_pc_desc', [['label', [NP_MARGIN, PC_DESC_TOP, 375 - 2 * NP_MARGIN, slide_h - PC_DESC_TOP], {
         'name': 'label_pc_desc', 'style': 's_label_white20c', 'style:normal:font_size': '16', 'line_wrap': 'true',
         'word_wrap': 'true'}, []]])
     # the Queue (the user's, 2026-11-12): podcast.c fills it, the playing episode and Up Next, each with arrows
-    named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_chapters', []), scroll_page('view_pc_queue', []),
-                              info_page]
+    named['slide_view'][3] = [album_page, desc, scroll_page('view_pc_queue', []), info_page]
     for n in named['view_info'][3]:
         n[1][0] += (375 - 225) // 2
     dots_y = PC_DOTS - PC_TOP
@@ -872,7 +873,8 @@ def playing_stock(data):
     # the shelf is off the screen and insensitive as well as hidden: stock's hit test skips only insensitive
     # widgets (docs/internals.md, Picker), so a hidden one over the pages took every tap and swipe on them
     named['slide_view_view'][3].append(['view', [-400, 0, 375, slide_h], {'name': 'view_pc_shelf', 'visible': 'false',
-                                                                          'sensitive': 'false'}, [lyric_page]])
+                                                                          'sensitive': 'false'}, [
+        lyric_page, scroll_page('view_pc_chapters', []), scroll_page('view_pc_transcript', [])]])
     dots = named['slide_indicator1']
     check(dots[1][1] == PC_DOTS and dots[2]['self_layout'] == f'default(x=0,y={PC_DOTS},w=100%,h=10)', 'Unexpected stock dots')
     for key in dots[2]:
@@ -884,10 +886,20 @@ def playing_stock(data):
     named['image_wait'][1] = [art_x + (PC_ART - 54) // 2, PC_TOP + (PC_ART - 54) // 2, 54, 54]
     named['image_wait'][2]['sensitive'] = 'false'  # hidden but over the art: taps go to the art
     # The progress bar is the iPod page's (np_slider), so it takes the accent and Theme, where stock's
-    # images drew theirs: its 82 px box's middle, 6 px down.
+    # images drew theirs: its 82 px box's middle, 6 px down; and as long as the iPod page's (the user's, 2026-11-15),
+    # the times under its ends as there, the dots between them.
     bar = named['slider_play']
     check(bar[1] == [50, 208, 290, 82] and bar[2]['style:normal:y_offset'] == '6', 'Unexpected stock progress bar')
+    check([PC_BAR_X, PC_BAR_W, 208 + 82 // 2 + 6] == [NP_BAR[0], NP_BAR[2], NP_BAR[1] + NP_BAR[3] // 2],
+          "Q2 Podcast's bar != the iPod page's")
     np_slider(bar, PC_BAR_X, 208 + 82 // 2 + 6, PC_BAR_W, NP_BAR[3])
+    for name in ('img_repeata', 'img_repeatb'):
+        named[name][1][0] = PC_BAR_X
+    for name, x, align in (('label_playtime', NP_TIME_X, 'left'), ('label_playlen', 375 - NP_TIME_X - 80, 'right')):
+        n = named[name]
+        n[1] = [x, NP_TIMES_Y, 80, 16]
+        n[2] = {k: v for k, v in n[2].items() if not k.endswith('text_align_h')}
+        n[2].update({f'style:{state}:text_align_h': align for state in ('normal', 'disable', 'focused', 'pressed')})
     check(PC_TOP + slide_h < 208 + 82 // 2 + 6 - NP_BAR[3], "the first page's text clear of the bar")
     return encode(root)
 
@@ -902,18 +914,28 @@ PC_TITLE_H = 22
 PC_ARTIST_H = 18
 PC_BTN = 50
 PC_DOTS = 270
-PC_BAR_X, PC_BAR_W = 50, 290  # the progress bar, stock's; the title and show span it
+PC_BAR_X, PC_BAR_W = NP_BAR[0], NP_BAR[2]  # the progress bar, the iPod page's; the title and show span it
+PC_DESC_TOP = 12  # Description's first line under the top row (the user's, 2026-11-15: not so high)
 # The side buttons, left column top to bottom, then the right: names (patch/podcast.c, airplay.c) and images.
 PC_SIDE = ('img_fav', 'img_pc_back', 'img_pc_chapprev', 'img_airplay', 'img_pc_fwd', 'img_pc_chapnext')
 PC_IMAGES = ('play_unfav', 'play_back5', 'play_chapprev', 'airplay', 'play_fwd30', 'play_chapnext')  # the default lengths
 
 
+# The columns line up with the top row's glyphs (the user's, 2026-11-15): the left one's centre on Return's chevron,
+# the right one's on More's dots. Centres in half pixels: navbar_return's ink is columns 13 to 24 of its 50 px image,
+# drawn centred in Return's 50 px frame; play_more's 2 to 25 of 28, centred in More's; the side glyphs' 3 to 24 of 28,
+# centred in their PC_BTN frames (test/build.py measures them all). The columns sit lower than the art's top, so the
+# chapter glyphs' ink (rows 6 to 21 of 28) ends on the art's foot: PC_SIDE_DROP.
+PC_RETURN_INK2, PC_MORE_INK2, PC_GLYPH_INK2 = 13 + 24, 11 * 2 + 2 + 25, 11 * 2 + 3 + 24
+PC_SIDE_DROP = PC_ART - ((PC_BTN - 28) // 2 + 21 + 1) - 2 * ((PC_ART - PC_BTN) // 2)  # the foot frame's ink ends on PC_ART
+
+
 def pc_frames():
-    """The side buttons' frames' x, y on the first page, in PC_SIDE's order: each column centred beside the art,
-    its three frames from the art's top to its foot."""
-    art_x = (375 - PC_ART) // 2
-    left = (art_x - PC_BTN) // 2
-    return [(x, (PC_ART - PC_BTN) * row // 2) for x in (left, 375 - left - PC_BTN) for row in range(3)]
+    """The side buttons' frames' x, y on the first page, in PC_SIDE's order: the left column centred on Return's
+    chevron, the right on More's dots, each PC_SIDE_DROP below the art's top, PC_ART - PC_BTN apart top to foot."""
+    left = ((375 - NP_ICONS_END) * 2 + PC_RETURN_INK2 - PC_GLYPH_INK2) // 2
+    right = ((NP_ICONS_END - NP_ICON) * 2 + PC_MORE_INK2 - PC_GLYPH_INK2) // 2
+    return [(x, PC_SIDE_DROP + (PC_ART - PC_BTN) * row // 2) for x in (left, right) for row in range(3)]
 
 
 # The full-screen art (a tap on Now Playing's opens it, any tap closes it): stock's art, shade and

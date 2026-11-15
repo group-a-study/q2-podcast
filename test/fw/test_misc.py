@@ -2311,7 +2311,8 @@ def test_a_touch_on_the_buttons_takes_the_nearest(fw, x, focus):
 # Up Next
 
 class Un(C.Structure):
-    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 100), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint)]
+    _fields_ = [('page', C.c_void_p), ('idx', C.c_uint * 100), ('view', C.c_void_p), ('n', C.c_uint), ('hash', C.c_uint), ('row', C.c_uint),
+                ('lead', C.c_uint), ('sel', C.c_int)]
 
 
 def un(fw):
@@ -2325,21 +2326,17 @@ def test_the_page_closing_forgets_it(fw):
     assert u.page is None
 
 
-@pytest.mark.parametrize('at, size, plays', ((7, 8, True), (8, 8, False), (0, 0, False)))
-def test_a_row_plays_its_track_only_while_the_queue_holds_it(fw, at, size, plays):
+# A tapped row playing its own track, and a queue changed under the page, are test_upnext.py's: its records live
+# under 4 GB, as queue_hash's 4-byte cells need.
+
+
+def test_a_row_with_no_queue_takes_the_rows_again(fw):
+    """The queue gone under the page: nothing plays, and the rows are taken again (saying so)."""
     u = un(fw)
-    u.idx[3] = at
-    fw.var('fw_ctx_mcl_pdeqplaylist', C.c_uint).value = 0x5000  # a 32-bit pointer's cell, as on the Q2
-    fw.mock('fw_deque_size', lambda *_: size)
-    assert fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(3, None) == 0
-    assert [c[1][0] for c in fw.calls('player_start_queue')] == ([at] if plays else [])
-    assert fw.calls('navigator_back')
-
-
-def test_a_row_with_no_queue_only_closes(fw):
-    un(fw).idx[0] = 1
+    u.idx[0], u.n = 1, 1
+    fw.mock('timer_add', lambda *_: 1)
     fw.fn('upnext__un_play', C.c_int, C.c_void_p, C.c_void_p)(0, None)
-    assert not fw.calls('player_start_queue') and fw.calls('navigator_back')
+    assert not fw.calls('player_start_queue') and not fw.calls('navigator_back') and fw.calls('timer_add')
 
 
 def test_up_next_opens_one_page_at_a_time(fw):

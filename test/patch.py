@@ -3836,7 +3836,9 @@ m.press(6000); assert m.hold()==11 and m.labels()==SONG_MENU[:2]+['View Queue']+
 # A folder play's untagged record: the player's parsed title once it has parsed that file.
 m=playing_menu(); id3=syms['g_play_id3_info']; m.u.mem_write(id3,b'/p/B\0'); m.u.mem_write(id3+O['ID3_TITLE'],b'Parsed\0')
 m.press(6000); assert m.hold()==11 and m.nodes[m.title]['text']=='Parsed'; passed()
-m=playing_menu(); assert m.run(2) is None and m.opened[-1][0]=='playerqueue_page' and m.names()==['A','B','C'] and not m.playback(); passed()
+# View Queue is Q2 Podcast's (upnext.c, the user's 2026-11-15: each episode's art, title and show), never stock's
+# playerqueue_page of files; its page opening is the motion block's (upnext_page)
+m=playing_menu(); assert m.run(2) is None and 'playerqueue_page' not in [o[0] for o in m.opened] and m.names()==['A','B','C'] and not m.playback(); passed()
 for action,expected,said in ((0,['A','B','B','C'],None),(1,['A','B','C','B'],None)):
     m=playing_menu(); assert m.run(action)==said and m.names()==expected and not m.playback(); passed()
 m=playing_menu(); assert m.run(3) is None
@@ -12016,12 +12018,22 @@ m,view,labels,ab=more_rows(classic_light_on)
 # Q2 Podcast's ⋯ page (podcast_more): Download Cover & Lyrics and Look up Artist (stock's rows 2 and 4) are gone,
 # so the page-opening rows with a chevron are Queue, Add to Playlist and Look up Podcast; then Delete Song, A-B
 # Repeat, the speed, the skip lengths and AirPlay's row
-labels=[l for i,l in enumerate(labels) if i not in (2,4)]
-assert [geometry(m,l)[0]+geometry(m,l)[2] for l in labels]==[316]*3+[350] and all(geometry(m,l)[3]>=27 and m.nodes[l]['style:normal:font_size']==27 for l in labels)
-for row,want in enumerate([1,1,1,0,0,0,0]):
+# Stock's Queue row (0) is Q2 Podcast's own now (podcast.c more_queue: View Queue's episodes), marked as a row that
+# opens a page all the same.
+add_label=labels[1]  # Add to Playlist's (this machine's stock rows have no text)
+labels=[l for i,l in enumerate(labels) if i not in (0,2,4)]
+assert [geometry(m,l)[0]+geometry(m,l)[2] for l in labels]==[316]*2+[350] and all(geometry(m,l)[3]>=27 and m.nodes[l]['style:normal:font_size']==27 for l in labels)
+def more_text(m,w):  # a ⋯ row's text (podcast_more_page's row_text; the row_text since is a Classic list row's)
+    for c in m.nodes[w].get('children',()):
+        t=m.nodes[c].get('text') if m.nodes[c]['type'] in ('hscroll_label','label') else more_text(m,c)
+        if t: return t
+    return None
+def holds(m,w,x): return w==x or any(holds(m,c,x) for c in m.nodes[w].get('children',()))
+into=[more_text(m,r) in ('Queue','Look up Podcast') or holds(m,r,add_label) for r in m.nodes[view]['children']]
+assert sum(into)==3,[more_text(m,r) for r in m.nodes[view]['children']]
+for row,want in enumerate(into):
     m.paint(view); assert m.selected(view)==row and [i[:2] for i in m.icons]==([(317+25,m.sel()[1]+16)] if want else []),(row,m.icons,m.sel())
     m.call()
-m.paint(view); assert m.selected(view)==7 and not m.icons
 m.touch(); m.paint(view); assert not m.icons; passed()
 m,view,labels,ab=more_rows(lambda _:None); assert all(len(m.nodes[i]['children'])==1 for i in m.nodes[view]['children']) and not m.icons; passed()  # Minimal's stays stock's
 # ... a selected-only chevron's other rows pay for no row test: a paint's cost per row, on a drill list, held by the cheap tests first.
@@ -13756,26 +13768,33 @@ assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and ca
 m.page=m.top; assert m.texts()==['Most Played']+[x for p in zip(ranked[:3],details[:3]) for x in p]; passed()
 
 # View Queue on a shuffle (Now Playing's hold menu, Up Next's list): a Play/Pause hold on a row plays its track
-# next, a move, not Play Next's copy, the queue as it was; the rows are taken again with the pick at row 0, the
+# next, a move, not Play Next's copy, the queue as it was; the rows are taken again with the pick first in Up Next, the
 # selection there, with no menu, toast or play/pause. A row already next stays there; playback is not touched; once
-# the queue changes under the page a hold says so and takes the rows again from the live queue.
+# the queue changes under the page a hold says so and takes the rows again from the live queue. Q2 Podcast's View
+# Queue (the user's, 2026-11-15): "Queue", the playing episode's row first, then each episode's title over its show.
+def un_rows(m):
+    """View Queue's Up Next titles, and whether the playing episode's row leads (its show says Now Playing)."""
+    t=m.texts()[1:]; lead=len(t)>1 and (t[1] or '').startswith('Now Playing')
+    return (t[2:] if lead else t)[0::2],int(lead)
 m=CoverflowMachine(page='playing_page',pos=1); q=m.deque([m.song(c) for c in 'ABCDE'])
 m.word(syms['mcl_pdeqplaylist'],q); m.word(O['MCL_POOL'],m.deque(list(range(5)),'int'))
 assert m.call(address=payload_syms['playback_set'],args=(0,1,0,0),gap=0)==1
 m.press(10); assert m.hold()==11 and 'Up Next' not in m.labels(); m.release()
 m.pick(m.labels().index('View Queue')); m.advance(0); m.page=m.top; assert m.nodes[m.page]['name']=='upnext_page'
-up=m.texts()[1::2]; assert len(up)==4 and 'B' not in up and m.texts()[0]=='View Queue'
-view=m.find('scroll_view'); m.paint(view); m.call(); assert m.selected(view)==1
+up,lead=un_rows(m); assert len(up)==4 and 'B' not in up and m.texts()[0]=='Queue',(m.texts(),up)
+view=m.find('scroll_view'); m.paint(view)
+for _ in range(lead+1): m.call()
+assert m.selected(view)==lead+1  # Up Next's second
 m.press(20); assert m.hold()==11 and m.release()==0 and not m.toasts
-want=[up[1],up[0]]+up[2:]; assert m.texts()[1::2]==want and m.names()==list('ABCDE') and m.mcl('MCL_POS')==1
-view=m.find('scroll_view'); assert m.selected(view)==0 and not m.playback() and m.top==m.page
-m.paint(view); m.call(O['KEY_NEXT']); assert m.selected(view)==1
-m.call(O['KEY_PREV']); assert m.selected(view)==0
+want=[up[1],up[0]]+up[2:]; assert un_rows(m)[0]==want and m.names()==list('ABCDE') and m.mcl('MCL_POS')==1
+view=m.find('scroll_view'); assert m.selected(view)==lead and not m.playback() and m.top==m.page
+m.paint(view); m.call(O['KEY_NEXT']); assert m.selected(view)==lead+1
+m.call(O['KEY_PREV']); assert m.selected(view)==lead
 toasts=len(m.toasts); m.press(30); assert m.hold()==11 and m.release()==0 and len(m.toasts)==toasts
-assert m.texts()[1::2]==want and m.names()==list('ABCDE')
+assert un_rows(m)[0]==want and m.names()==list('ABCDE')
 m.deqs[q][1][4]=m.song('F'); m.call(O['KEY_NEXT']); toasts=len(m.toasts)
 m.press(40); assert m.hold()==11 and m.release()==0 and len(m.toasts)==toasts+1 and m.toasts[-1][3]=='Queue changed'
-fresh=m.texts()[1::2]; assert fresh[0]==up[1] and 'F' in fresh and 'E' not in fresh and m.selected(m.find('scroll_view'))==0
+fresh=un_rows(m)[0]; assert fresh[0]==up[1] and 'F' in fresh and 'E' not in fresh and m.selected(m.find('scroll_view'))==lead
 m.close(); passed()
 
 # Ratings (ratings.c rate_*): 5 hearts are stock's My Fav, 1-4 kept in /mnt/data/ringnav-ratings by listen_key with
@@ -20354,7 +20373,10 @@ m=classic_light_new(PhotosMachine,tree={'/mnt/mmc':[('photos',4)],'/mnt/mmc/phot
 m=classic_light_new(ShuffleMachine); ebar=page_bar(m); m.top=m.node('window','localmusic_page'); m.call(address=payload_syms['most_played'],args=(0,m.event,0,0),gap=0,count=5_000_000); m.page=m.top; shows_empty(m,ebar,'No plays yet','Most Played'); passed()
 m=classic_light_new(SpotMachine,files={}); ebar=page_bar(m); erows=stream_rows(m); f,ctx=m.handler(erows['Tidal Downloads'],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=5_000_000); shows_empty(m,ebar,'No downloads yet','Tidal Downloads'); passed()
 m=classic_light_new(CoverflowMachine,page='playing_page',pos=0); ebar=page_bar(m); q=m.deque([m.song('A')]); m.word(syms['mcl_pdeqplaylist'],q); m.word(O['MCL_POOL'],m.deque([0],'int')); assert m.call(address=payload_syms['playback_set'],args=(0,1,0,0),gap=0)==1
-m.press(10); assert m.hold()==11; m.release(); m.pick(m.labels().index('View Queue')); m.advance(0); m.page=m.top; shows_empty(m,ebar,'Nothing to play next','View Queue'); passed()
+# View Queue with nothing after the episode playing: its row alone (Q2 Podcast's, the user's 2026-11-15: not "Nothing to
+# play next", nor "Nothing playing"), the bar reading Queue
+m.press(10); assert m.hold()==11; m.release(); m.pick(m.labels().index('View Queue')); m.advance(0); m.page=m.top
+assert bar_reads(m,ebar)=='Queue' and un_rows(m)==([],1),(m.texts(),m.nodes[ebar].get('text')); passed()
 m=ChapterMachine(ready=False); m.open_chapters(); m.advance(50)
 f,ctx=m.handler(m.page,O['EVT_DESTROY']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert m.cancelled==1
@@ -20411,21 +20433,26 @@ m.advance(500); assert m.nodes[m.fav]['image']=='play_fav' and track in m.favs  
 m.favs.clear(); m.word(r+O['REC_PATH'],m.string('/p/B')); m.advance(500); assert m.nodes[m.fav]['image']=='play_unfav'; passed()  # a song: My Fav's
 m=RateMachine(); m.mock('strstr@GLIBC_2.0'); r=m.items(m.get(syms['mcl_pdeqplaylist']))[1]; m.word(r+O['REC_PATH'],m.string(PODCAST))
 m.advance(500); m.tap(); assert any(c[0]=='fav_click' for c in m.calls) and '/tmp/q2-star' not in m.files; passed()  # signed out: My Fav
-# Q2 Podcast's Now Playing pages (tools/ipod.py playing_stock): the art, Description, Chapters and the info in the
-# slide_view, the lyrics (a transcript) in view_pc_shelf, hidden, until the player has lyrics; the buttons beside the art.
+# Q2 Podcast's Now Playing pages (tools/ipod.py playing_stock): the art, Description, the Queue and the info in the
+# slide_view; Chapters and Transcript in view_pc_shelf, hidden, until the episode has them (the user's, 2026-11-15: no
+# page and no dot for what isn't there), Chapters then after Description and Transcript last; the buttons beside the art.
 class PagesMachine(FileMocks,ChapterMachine):
     def __init__(self,files=None,**kw):
         super().__init__(**kw); self.file_mocks('pg:',files)
-        for n in ('widget_remove_child','widget_add_child'): self.handlers[syms[n]]='pt:'+n
+        for n in ('widget_remove_child','widget_add_child','widget_restack','widget_index_of'): self.handlers[syms[n]]='pt:'+n
     def hook(self,u,address,size,unused):
         name=self.handlers.get(address,'')
         if name.startswith('pt:'):  # the widget tree's, as AWTK's
             a,b=u.reg_read(REGS[0]),u.reg_read(REGS[1]); self.calls.append((name[3:],a,b))
             if name=='pt:widget_remove_child': self.nodes[a]['children'].remove(b)
-            else: self.nodes[a]['children'].append(b); self.word(b+O['W_PARENT'],a)
+            elif name=='pt:widget_add_child': self.nodes[a]['children'].append(b); self.word(b+O['W_PARENT'],a)
+            elif name=='pt:widget_index_of': self.returns(self.nodes[self.get(a+O['W_PARENT'])]['children'].index(a),clobber=True); return
+            else:  # widget_restack(w, index): w to that place among its parent's children
+                kids=self.nodes[self.get(a+O['W_PARENT'])]['children']; kids.remove(a); kids.insert(b,a)
             self.returns(0,clobber=True); return
         if not name.startswith('pg:'): return super().hook(u,address,size,unused)
         name=name[3:].split('@')[0]; a,b,c,d=[u.reg_read(r) for r in REGS]; self.calls.append((name,a,b,c)); self.returns(self.file_op(u,name,a,b,c,d),clobber=True)
+    def pc_page(self,name): return self.node('view',name,[self.node('scroll_view',name+'_scroll')])
     def np(self):
         init=HOOKS['playing_page_init'][0]; self.handlers[init+12]='stock_playing'
         self.title,self.artist=self.node('hscroll_label','scrlabel_title'),self.node('hscroll_label','scrlabel_artist')
@@ -20433,30 +20460,37 @@ class PagesMachine(FileMocks,ChapterMachine):
               ('img_fav','img_pc_back','img_pc_chapprev','img_airplay','img_pc_fwd','img_pc_chapnext')])
         self.desc=self.node('label','label_pc_desc')
         pages=[album,self.node('view','view_pc_desc',[self.node('scroll_view','view_pc_desc_scroll',[self.desc])]),
-               self.node('view','view_pc_chapters',[self.node('scroll_view','view_pc_chapters_scroll')]),self.node('view','view_info')]
+               self.pc_page('view_pc_queue'),self.node('view','view_info')]
+        self.chapters,self.transcript=self.pc_page('view_pc_chapters'),self.pc_page('view_pc_transcript')
         self.slide=self.node('slide_view','slide_view',pages,value=0)
         self.lyric=self.node('view','view_lyric',[self.node('list_view','view_lrc',[self.node('scroll_view','scroll_lrc')])])
-        self.shelf=self.node('view','view_pc_shelf',[self.lyric],visible=0)
+        self.shelf=self.node('view','view_pc_shelf',[self.lyric,self.chapters,self.transcript],visible=0)
         self.dots=self.node('slide_indicator','slide_indicator1')
         box=self.node('view','slide_view_view',[self.slide,self.dots,self.shelf])
         self.win=self.node('window','playing_page',[box,self.node('slider','slider_play',max=225,value=100)])
-        for w,parent in ((self.lyric,self.shelf),(self.slide,box),(self.shelf,box),(box,self.win),(self.win,self.wm),
+        shelved=(self.lyric,self.chapters,self.transcript)
+        for w,parent in ((self.slide,box),(self.shelf,box),(box,self.win),(self.win,self.wm),*((w,self.shelf) for w in shelved),
                          *((p,self.slide) for p in pages)): self.word(w+O['W_PARENT'],parent)
-        for w in (self.slide,*pages,*(self.nodes[p]['children'][0] for p in pages[1:3])): self.word(w+O['W_W'],375); self.word(w+O['W_H'],207)
+        for w in (self.slide,*pages,self.chapters,self.transcript,
+                  *(self.nodes[p]['children'][0] for p in (*pages[1:3],self.chapters,self.transcript))):
+            self.word(w+O['W_W'],375); self.word(w+O['W_H'],207)
         self.top=self.win; self.call(address=init,args=(self.win,7,0,0),gap=0)
         return self.nodes[self.slide]['children']
-    def scroll(self,i): return self.nodes[self.nodes[self.slide]['children'][i]]['children'][0]
+    def names(self): return [self.nodes[p]['name'] for p in self.nodes[self.slide]['children']]
+    def scroll(self,name): return self.nodes[self.named(name)]['children'][0]
     def texts_in(self,w): return [self.nodes[c].get('text') for c in self.nodes[w]['children']]
     def named(self,name): return next(w for w,n in self.nodes.items() if n.get('name')==name)
     def click(self,w):
         f,ctx=self.handler(w,O['EVT_CLICK']); self.calls=[]; self.call(address=f,args=(ctx,self.event,0,0),gap=0,clear=False)
 DESC='/mnt/mmc/Podcasts/Show/.description/2024-01-01 - Ep.txt'
-m=PagesMachine({DESC:'Hello.\n\nAn episode about 日本語.'.encode()},path=PODCAST); pages=m.np()
-assert [m.nodes[p]['name'] for p in pages]==['view_album','view_pc_desc','view_pc_chapters','view_info'] and m.nodes[m.dots]['max']==4
-pc_poll(m); assert m.texts_in(m.scroll(1))==['Hello.\n\nAn episode about 日本語.'] and m.texts_in(m.scroll(2))==['Reading chapters…']
+m=PagesMachine({DESC:'Hello.\n\nAn episode about 日本語.'.encode()},path=PODCAST); m.np()
+assert m.names()==['view_album','view_pc_desc','view_pc_queue','view_info'] and m.nodes[m.dots]['max']==4
+pc_poll(m); assert m.texts_in(m.scroll('view_pc_desc'))==['Hello.\n\nAn episode about 日本語.']
+assert m.nodes[m.chapters]['children'] and m.get(m.chapters+O['W_PARENT'])==m.shelf  # still being read: no page yet
 m.advance(O['PC_HOLD_MS']*3); pc_poll(m); assert [c[0] for c in m.calls if c[0]=='chapters_start']==['chapters_start']
 m.advance(500); pc_poll(m)
-rows=m.nodes[m.scroll(2)]['children']; assert [m.texts_in(r) for r in rows]==[['Opening','0:00'],['Chapter 2','1:00'],['日本語','2:00']]
+assert m.names()==['view_album','view_pc_desc','view_pc_chapters','view_pc_queue','view_info'] and m.nodes[m.dots]['max']==5,(m.names(),m.nodes[m.dots].get('max'))
+rows=m.nodes[m.scroll('view_pc_chapters')]['children']; assert [m.texts_in(r) for r in rows]==[['Opening','0:00'],['Chapter 2','1:00'],['日本語','2:00']]
 assert [m.nodes[m.nodes[r]['children'][0]]['style:normal:text_color'] for r in rows]==[-0x555556,-1,-0x555556]  # 70 s: the second, white
 f,ctx=m.handler(rows[2],O['EVT_CLICK']); m.call(address=f,args=(ctx,m.event,0,0),gap=0)
 assert jumps(m)==[('player_seek_time',120)]; passed()
@@ -20464,16 +20498,20 @@ assert jumps(m)==[('player_seek_time',120)]; passed()
 for name,want in (('img_pc_fwd',('player_seek_time',100)),('img_pc_back',('player_seek_time',65)),
                   ('img_pc_chapnext',('player_seek_time',120)),('img_pc_chapprev',('player_seek_time',60))):
     m.click(m.named(name)); assert jumps(m)==[want],(name,jumps(m)); passed()
-# A transcript (the player's lyrics, a .lrc beside the episode): its page last, a fifth dot; gone TRANSCRIPT_GONE_MS after
-# the lyrics are, the page before it in front if it was.
-m.lyric_size=12; m.advance(500); pc_poll(m)
-assert m.nodes[m.slide]['children'][-1]==m.lyric and m.nodes[m.shelf]['children']==[] and m.nodes[m.dots]['max']==5
-m.nodes[m.slide]['value']=4; m.lyric_size=0; m.advance(500); pc_poll(m); assert m.nodes[m.slide]['children'][-1]==m.lyric
-m.advance(2000); pc_poll(m)
-assert m.nodes[m.shelf]['children']==[m.lyric] and len(m.nodes[m.slide]['children'])==4 and m.nodes[m.slide]['value']==3 and m.nodes[m.dots]['max']==4; passed()
-m=PagesMachine(path='/mnt/mmc/Music/Song.mp3'); m.np(); pc_poll(m)
-assert m.texts_in(m.scroll(1))==['No description'] and m.texts_in(m.scroll(2))==['No chapters'] and not any(c[0]=='chapters_start' for c in m.calls)
-m.click(m.named('img_pc_chapnext')); assert jumps(m)==[('player_next_music',)] or [j[0] for j in jumps(m)]==['player_next_music']; passed()  # no chapters: the next track
+# A transcript (q2-pocket's timed .lrc beside the episode) reads as Description does: paragraphs, a new one after a
+# sentence's end 45 s on, the one being spoken (70 s: the second) white; its page last, a dot more.
+LRC='/mnt/mmc/Podcasts/Show/2024-01-01 - Ep.lrc'
+m=PagesMachine({LRC:b'[00:00.00]Hello there.\n[00:20.00]Still the first one.\n[00:50.00]Second part.\n[01:40.00]Third.\n'},path=PODCAST)
+m.np(); pc_poll(m)
+assert m.names()==['view_album','view_pc_desc','view_pc_queue','view_info','view_pc_transcript'] and m.nodes[m.dots]['max']==5,(m.names(),m.nodes[m.dots].get('max'))
+paras=m.nodes[m.scroll('view_pc_transcript')]['children']
+assert [m.nodes[p].get('text') for p in paras]==['Hello there. Still the first one.','Second part.','Third.']
+assert [m.nodes[p]['style:normal:text_color'] for p in paras]==[-0x555556,-1,-0x555556]; passed()
+# A song: no description, no chapters page (a chapter button goes to the next track), no transcript
+m=PagesMachine(path='/mnt/mmc/Music/Song.mp3'); m.np(); pc_poll(m); m.advance(3000); pc_poll(m)
+assert m.texts_in(m.scroll('view_pc_desc'))==['No description'] and not any(c[0]=='chapters_start' for c in m.calls)
+assert m.names()==['view_album','view_pc_desc','view_pc_queue','view_info'] and m.nodes[m.dots]['max']==4
+m.click(m.named('img_pc_chapnext')); assert jumps(m)==[('player_next_music',)] or [j[0] for j in jumps(m)]==['player_next_music']; passed()
 # A track played from Folder, untitled: its name as a title until the player has read the file (the date, the
 # extension gone), then the file's title, and a spoken one's show (its album) as the artist; the page shows them.
 m=PagesMachine(path=PODCAST); m.np(); m.word(m.track+O['REC_NAME'],m.string('2024-01-01 - Ep [abc123].mp3'))

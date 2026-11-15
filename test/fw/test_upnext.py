@@ -1,5 +1,7 @@
-"""upnext.c on its device path: Up Next's rows over a shuffled queue as playback.c orders it, a row's tap, a
-Play/Pause hold's move, and a queue changed under the page."""
+"""upnext.c on its device path: View Queue's rows (Q2 Podcast's: each episode's title over its show, podcast.c
+podcast_row) over a shuffled queue as playback.c orders it, a row's tap, a Play/Pause hold's move, and a queue
+changed under the page. The host's records hold only names (Low), so a title is its file's name tidied and the
+show is empty; with no folder or library queue type set, no row is the playing one's."""
 import ctypes as C
 import itertools
 import mmap
@@ -54,8 +56,8 @@ def low():
 
 class Queue:
     """The playing queue in stock's deque, its player's globals, and Advanced Play's Shuffle Songs over it
-    (playback.c). The odd tracks' artists go in after the order is drawn: its album grouping reads REC_ALBUM's cell
-    with the artist's as its high half here."""
+    (playback.c). No record has an artist: a row's show reads REC_ALBUM, whose 8-byte read here takes in the
+    artist's cell (Low), so it stays empty, as the album's."""
     def __init__(self, fw, mcl, low, names=NAMES, pos=2, seed=0x2545f491):
         self.fw, self.mcl, self.low, self.deques = fw, mcl, low, Deques(fw)
         self.records = [low.record(n, cue=k) for k, n in enumerate(names)]
@@ -64,8 +66,6 @@ class Queue:
         mcl.pos = pos
         fw.var('playback__rng', C.c_uint).value = seed
         assert fw.fn('playback_set', C.c_int, C.c_int, C.c_int)(0, 1) == 1
-        for k in range(1, len(names), 2):
-            C.c_uint.from_address(self.records[k] + O['REC_ARTIST']).value = low.take(b'Artist %d\0' % k)
 
     def name(self, at):
         return C.string_at(C.c_uint.from_address(self.deques[self.handle][at] + O['REC_NAME']).value).decode()
@@ -125,7 +125,7 @@ class Page:
 
     @property
     def rows(self):
-        """Each row's caption and detail."""
+        """Each row's title and show (its labels' texts; its art and arrows are images)."""
         return [tuple(self.texts.get(label) for label in self.children.get(item, [])) for item in self.items]
 
     @property
@@ -167,12 +167,17 @@ def up(fw, mcl, low):
     return queue, Page(fw)
 
 
-def test_up_next_lists_what_then_plays_each_title_over_its_artist(fw, up):
+def title(name):
+    """A file's name as a row's title (podcast.c name_title): without its extension."""
+    return name.rsplit('.', 1)[0]
+
+
+def test_up_next_lists_what_then_plays_each_title_over_its_show(fw, up):
     queue, page = up
     page.open()
-    assert 'View Queue' in page.said and len(page.rows) == len(NAMES) - 1  # every track but the playing one
-    assert all(row[1] == ('Artist %d' % int(row[0][:2]) if int(row[0][:2]) % 2 else '') for row in page.rows)  # '' untagged
-    assert page.captions == queue.played(len(NAMES) - 1)
+    assert 'Queue' in page.said and len(page.rows) == len(NAMES) - 1  # every track but the playing one
+    assert all(row[1] == '' for row in page.rows)  # no show: the host's records have no album or folder
+    assert page.captions == [title(n) for n in queue.played(len(NAMES) - 1)]
 
 
 def test_a_tapped_row_plays_its_own_track_and_the_page_closes(fw, up):
@@ -181,7 +186,7 @@ def test_a_tapped_row_plays_its_own_track_and_the_page_closes(fw, up):
     caption = page.captions[3]
     assert page.tap(3) == 0
     (at, *_), = [a for _, a in fw.calls('player_start_queue')]
-    assert queue.name(at) == caption and fw.calls('navigator_back')
+    assert title(queue.name(at)) == caption and fw.calls('navigator_back')
 
 
 def test_a_hold_makes_its_row_s_track_play_next_and_takes_the_rows_again_with_it_first(fw, up):
@@ -190,7 +195,7 @@ def test_a_hold_makes_its_row_s_track_play_next_and_takes_the_rows_again_with_it
     before = page.captions
     assert page.hold(4) == 0
     assert page.captions == [before[4]] + before[:4] + before[5:] and page.selected() == (0, len(before))
-    assert page.toasts == [] and queue.played(2) == [before[4], before[0]]  # the order then plays it
+    assert page.toasts == [] and [title(n) for n in queue.played(2)] == [before[4], before[0]]  # as it plays
 
 
 def test_a_hold_on_the_row_already_next_keeps_the_order(fw, up):
@@ -199,25 +204,25 @@ def test_a_hold_on_the_row_already_next_keeps_the_order(fw, up):
     before = page.captions
     page.hold(0)
     assert page.captions == before and page.toasts == [] and page.selected() == (0, len(before))
-    assert queue.played(len(before)) == before
+    assert [title(n) for n in queue.played(len(before))] == before
 
 
 def test_a_hold_after_the_queue_changed_under_the_page_says_so_and_moves_nothing(fw, up, low):
     queue, page = up
     page.open()
     before = page.captions
-    last = NAMES.index(before[-1].encode())
+    last = NAMES.index(before[-1].encode() + b'.flac')
     queue.deques[queue.handle][last] = low.record(b'Other.flac', cue=99)  # the queue replaced under the page
     page.hold(3)
     assert page.toasts == ['Queue changed'] and page.selected()[0] == 0
-    assert queue.played(1) == [before[0]]  # not the held row's
+    assert [title(n) for n in queue.played(1)] == [before[0]]  # not the held row's
 
 
 def test_a_hold_on_a_row_played_since_says_the_queue_changed(fw, up):
     queue, page = up
     page.open()
     before = page.captions
-    assert queue.played(1) == before[:1]
+    assert [title(n) for n in queue.played(1)] == before[:1]
     page.hold(0)
     assert page.toasts == ['Queue changed'] and page.captions == before[1:]  # taken again, without it
 
@@ -234,7 +239,7 @@ def test_a_hold_up_next_doesn_t_take_stays_stock_s_and_moves_nothing(fw, up):
     page.props[C.addressof(page.view), SEL] = 4
     fw.mock('timer_add', lambda *_: 0)
     assert page.un_hold() == 0  # nowhere to defer the move to
-    assert page.timers == [] and page.toasts == [] and queue.played(len(before)) == before
+    assert page.timers == [] and page.toasts == [] and [title(n) for n in queue.played(len(before))] == before
 
 
 def test_a_hold_whose_page_closed_before_the_next_pass_moves_nothing(fw, up):
@@ -245,14 +250,14 @@ def test_a_hold_whose_page_closed_before_the_next_pass_moves_nothing(fw, up):
     assert page.un_hold() == 1
     page.close()
     page.run()
-    assert page.toasts == [] and queue.played(len(before)) == before
+    assert page.toasts == [] and [title(n) for n in queue.played(len(before))] == before
 
 
 def test_nothing_to_play_next_says_so(fw, mcl, low):
     Queue(fw, mcl, low, names=NAMES[:1], pos=0)
     page = Page(fw)
     page.open()
-    assert page.rows == [] and 'Nothing to play next' in page.said
+    assert page.rows == [] and 'Nothing playing' in page.said
 
 
 def test_a_closed_page_lets_view_queue_open_a_new_one(fw, up):

@@ -16,9 +16,11 @@ unsigned playback_upcoming(unsigned *out, unsigned max); /* Up Next: queue indic
 unsigned playback_queue_insert(void *queue, void *add, int next);
 void playback_insert(unsigned at, unsigned n, int next); /* the advanced part alone */
 int playback_move(unsigned from); /* Up Next's hold: from plays next; its new index, else -1 */
-unsigned playback_queue_rows(unsigned *out, unsigned max); /* Q2 Podcast's Queue page: Up Next */
-int playback_raise(unsigned row);     /* its up arrow: row swaps with the one before */
-int playback_play_swap(unsigned at);  /* its tap: at to play now, the playing one next */
+unsigned playback_queue_rows(unsigned *out, unsigned max); /* Q2 Podcast's Queue pages: Up Next */
+int playback_raise(unsigned row);     /* their up arrow: row swaps with the one before */
+int playback_play_swap(unsigned at);  /* their tap: the index to start (at to play, the playing one next), -1 none */
+int playback_play_now(void *r);       /* Cover Flow's pick: r plays, the playing one next; 0 none */
+int playback_drop(unsigned at);       /* a deleted file's row out of the queue, never the playing one */
 void playback_poll(void);
 void playback_speed_start(void);
 void playback_track_speed(void); /* a track's start: the folder's speed, to the decoder */

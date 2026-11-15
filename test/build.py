@@ -479,14 +479,35 @@ def validate_assets(directory):
     named = {n[2].get('name'): n[2] for n in walk(stock_page)}
     assert named['view_lrc']['self_layout'] == 'default(x=0,y=0,w=100%,h=-20)'
     assert named['label_lyricmsg']['self_layout'] == 'default(x=0,y=73,w=100%,h=28)'
-    # Q2 Podcast's Now Playing: the buttons beside the art, each its glyph; the pages in order, the lyrics (a
-    # transcript) in their hidden view until podcast.c moves them in; the dots under the bar, between the times
-    from ipod import PC_IMAGES, PC_SIDE, PC_DOTS, PC_TOP
+    # Q2 Podcast's Now Playing: the buttons beside the art, each its glyph; the pages in order, Chapters and
+    # Transcript (and stock's lyrics page, for good) in their hidden view until podcast.c moves them in; the dots
+    # under the bar, between the times
+    from ipod import PC_IMAGES, PC_SIDE, PC_DOTS, PC_TOP, PC_ART, PC_DESC_TOP, NP_BAR, NP_TIME_X, NP_TIMES_Y
     assert [named[n].get('image') for n in PC_SIDE] == list(PC_IMAGES)
     nodes = {n[2].get('name'): n for n in walk(stock_page)}
-    assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_chapters',
-                                                              'view_pc_queue', 'view_info']
-    assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric'] and named['view_pc_shelf']['visible'] == 'false'
+    assert [c[2]['name'] for c in nodes['slide_view'][3]] == ['view_album', 'view_pc_desc', 'view_pc_queue', 'view_info']
+    assert [c[2]['name'] for c in nodes['view_pc_shelf'][3]] == ['view_lyric', 'view_pc_chapters', 'view_pc_transcript']
+    assert named['view_pc_shelf']['visible'] == 'false' and nodes['label_pc_desc'][1][1] == PC_DESC_TOP
+    # the bar as long as the iPod page's, the times under its ends as there (the user's, 2026-11-15)
+    bar = nodes['slider_play'][1]
+    assert [bar[0], bar[2]] == [NP_BAR[0], NP_BAR[2]] and bar[1] + bar[3] // 2 == NP_BAR[1] + NP_BAR[3] // 2
+    assert nodes['label_playtime'][1][:2] == [NP_TIME_X, NP_TIMES_Y] and nodes['label_playlen'][1][:2] == [375 - NP_TIME_X - 80, NP_TIMES_Y]
+    # the side columns' glyphs on Return's chevron and More's dots, the chapter glyphs' ink ending on the art's
+    # foot: measured on the images the build ships, each drawn centred in its frame
+    def ink(image):
+        from PIL import Image
+        im = Image.open(io.BytesIO(read('rootfs.squashfs', 'release/assets/default/raw/images/xx/' + image + '.png'))).convert('RGBA')
+        box = im.getchannel('A').point(lambda a: 255 if a > 96 else 0).getbbox()
+        return im.size, box
+    def centre2(frame, image):  # twice the glyph ink's centre on the screen, x
+        (w, h), (x0, y0, x1, y1) = ink(image)
+        return 2 * frame[0] + (frame[2] - w) + x0 + x1 - 1
+    ret, more = nodes['img_return'][1], nodes['img_more'][1]
+    left, right = nodes['img_pc_chapprev'][1], nodes['img_pc_chapnext'][1]
+    assert abs(centre2(left, 'play_chapprev') - centre2(ret, 'navbar_return')) <= 1
+    assert abs(centre2(right, 'play_chapnext') - centre2(more, 'play_more')) <= 1
+    (w, h), (x0, y0, x1, y1) = ink('play_chapprev')
+    assert left[1] + (left[3] - h) // 2 + y1 == PC_ART and right[1] == left[1]
     # stock's hit test skips only insensitive widgets: the hidden shelf took every touch on the pages (1.8.0)
     assert named['view_pc_shelf']['sensitive'] == 'false' and nodes['view_pc_shelf'][1][0] < -300
     assert named['image_wait']['sensitive'] == 'false'

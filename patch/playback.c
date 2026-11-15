@@ -29,6 +29,7 @@ extern int album_before(const void *, const void *), folder_cmp(void *, void *),
 extern unsigned queue_hash(void *); /* navigation.c */
 extern int resume_held(void);       /* navigation.c */
 extern void resume_return(void), resume_restart(void);
+extern int media_owner(void); /* headset.c */
 
 typedef struct {
     unsigned index, group, rank;
@@ -923,6 +924,7 @@ int ringnav_prev(void) {
     /* The track left is unplayed again, so Next comes back to it rather than skipping it. */
     if ((unsigned)M(MCL_POS) < s.n) s.seen[M(MCL_POS)] = 0;
     M(MCL_POS) = (int)at;
+    pend_take(at); /* playing again, so not waiting to (a Queue pick put the track it left first) */
     for (unsigned i = 0; i < s.n; ++i)
         if (s.order[i].index == at) {
             s.cursor = i;
@@ -1190,10 +1192,27 @@ unsigned playback_queue_insert(void *queue, void *add, int next) {
  * indices, the order and every album or folder group stay as they were. commit then takes its
  * order entry to the cursor, as a Shuffle Songs pick does. Returns from, -1 when nothing moves.
  * ponytail: a track taken from the next pass's rows (Repeat All) still plays in that pass too. */
+static int local_queue(void);
 int playback_move(unsigned from) {
     void *q = queue();
     unsigned pos = (unsigned)M(MCL_POS);
-    if (!s.active || !q || deque_size(q) != s.n || pos >= s.n || from >= s.n || from == pos)
+    if (!s.active) { /* the queue plays in its order: from's row goes in after the playing one */
+        if (!local_queue() || from >= deque_size(q) || from == pos) return -1;
+        if (from == pos + 1) return (int)from;
+        close_preload();
+        if (from > pos) {
+            reverse_rows(q, pos + 1, from + 1);
+            reverse_rows(q, pos + 2, from + 1);
+        } else { /* rows from..pos turn one place back: the playing row moves up, from's after it */
+            reverse_rows(q, from, pos + 1);
+            reverse_rows(q, from, pos);
+            M(MCL_POS) = (int)--pos;
+        }
+        s.dirty = 1;
+        playback_save();
+        return (int)pos + 1;
+    }
+    if (!q || deque_size(q) != s.n || pos >= s.n || from >= s.n || from == pos)
         return -1;
     close_preload();
     s.next_valid = 0;
@@ -1203,19 +1222,55 @@ int playback_move(unsigned from) {
     return (int)from;
 }
 
-/* Q2 Podcast's Queue page (podcast.c): what plays after this track, in order, ignoring the
- * single-song rules (the page lists the queue whatever the repeat). */
-unsigned playback_queue_rows(unsigned *out, unsigned max) { return upcoming(out, max); }
+/* A local queue with a track at its position: a folder or library one (local_class), the local
+ * player's (no stream, radio or video over it). */
+static int local_queue(void) {
+    void *q = queue();
+    return q && (unsigned)M(MCL_POS) < deque_size(q) && local_class(M(MCL_TYPE)) && media_owner() == 1;
+}
 
-/* The Queue page's up arrow: Up Next's row (as playback_queue_rows lists it) swaps with the one
- * before it. The rows to it become the pending list's front in their new order (pend_front, last
- * first), so the queue, its indices and the order stay as they were, as playback_move's hold does.
- * Returns 0 when nothing moves (advanced play off, the first row, past PEND_LIMIT). */
+/* Q2 Podcast's Queue pages (podcast.c, upnext.c): what plays after this track, in order, ignoring
+ * the single-song rules (the pages list the queue whatever the repeat). Without advanced play the
+ * player goes through the queue in its order (stock's Repeat All wrapping to its start), so that
+ * order is Up Next. */
+unsigned playback_queue_rows(unsigned *out, unsigned max) {
+    if (s.active) return upcoming(out, max);
+    if (!local_queue()) return 0;
+    unsigned n = deque_size(queue()), pos = (unsigned)M(MCL_POS), k = 0;
+    for (unsigned i = pos + 1; i < n && k < max; ++i) out[k++] = i;
+    for (unsigned i = 0; M(MCL_MODE) == 3 && i < pos && k < max; ++i) out[k++] = i;
+    return k;
+}
+
+/* Swaps the queue's rows a and b (each a whole stSongInfo, its strings its own: reverse_rows) for
+ * a queue without advanced play, whose order is the queue's: a preload of either goes. */
+static void swap_rows(unsigned a, unsigned b) {
+    char t[REC_SIZE];
+    void *q = queue();
+    if (a == b) return;
+    close_preload();
+    memcpy(t, deque_at(q, a), REC_SIZE);
+    memcpy(deque_at(q, a), deque_at(q, b), REC_SIZE);
+    memcpy(deque_at(q, b), t, REC_SIZE);
+    s.dirty = 1;
+}
+
+/* The Queue pages' up arrow: Up Next's row (as playback_queue_rows lists it) swaps with the one
+ * before it. In advanced play the rows to it become the pending list's front in their new order
+ * (pend_front, last first), so the queue, its indices and the order stay as they were, as
+ * playback_move's hold does; without it the two rows swap in the queue, which plays in its order.
+ * Returns 0 when nothing moves (no local queue, the first row, past PEND_LIMIT). */
 int playback_raise(unsigned row) {
     unsigned idx[PEND_LIMIT], n;
     void *q = queue();
-    if (!s.active || !q || deque_size(q) != s.n || !row || row >= PEND_LIMIT) return 0;
-    if ((n = upcoming(idx, row + 1)) <= row) return 0;
+    if (!row || row >= PEND_LIMIT || !local_queue()) return 0;
+    if (s.active && deque_size(q) != s.n) return 0;
+    if ((n = playback_queue_rows(idx, row + 1)) <= row) return 0;
+    if (!s.active) {
+        swap_rows(idx[row - 1], idx[row]);
+        playback_save();
+        return 1;
+    }
     unsigned t = idx[row];
     idx[row] = idx[row - 1], idx[row - 1] = t;
     for (unsigned k = row + 1; k-- > 0;) pend_front(idx[k]);
@@ -1226,18 +1281,94 @@ int playback_raise(unsigned row) {
     return 1;
 }
 
-/* The Queue page's tap: the track at `at` is to play now, and the one playing goes first in Up Next
- * (as Pocket Casts' Up Next does), its place kept by the resume ring. Only the pending list
- * changes; the caller then starts `at`. Returns 0 when advanced play is off or `at` plays already. */
+/* The Queue pages' tap: the track at `at` is to play now, and the one playing goes first in Up Next
+ * (as Pocket Casts' Up Next does), its place kept by the resume ring. In advanced play only the
+ * pending list changes; without it `at` moves to just after the playing row and the two swap, so
+ * the queue plays on from the old track. Returns the queue index the caller starts, -1 when
+ * nothing changes (no local queue, or `at` plays already). */
 int playback_play_swap(unsigned at) {
     void *q = queue();
     unsigned pos = (unsigned)M(MCL_POS);
-    if (!s.active || !q || deque_size(q) != s.n || pos >= s.n || at >= s.n || at == pos) return 0;
+    if (!local_queue() || at >= deque_size(q) || at == pos) return -1;
+    if (!s.active) {
+        if (at > pos + 1) { /* rows pos+1..at turn one place on: at's lands at pos+1 */
+            close_preload();
+            reverse_rows(q, pos + 1, at + 1);
+            reverse_rows(q, pos + 2, at + 1);
+        } else if (at < pos) { /* rows at..pos turn one place back: at's lands at pos */
+            close_preload();
+            reverse_rows(q, at, pos + 1);
+            reverse_rows(q, at, pos);
+            M(MCL_POS) = (int)--pos; /* the playing row moved up with them */
+        }
+        swap_rows(pos, pos + 1);
+        playback_save();
+        return (int)pos;
+    }
+    if (deque_size(q) != s.n || pos >= s.n || at >= s.n) return -1;
     close_preload();
     s.next_valid = 0;
     s.dirty = 1;
     pend_take(at);
     pend_front(pos);
+    playback_save();
+    return (int)at;
+}
+
+/* Q2 Podcast's Cover Flow pick (the user's, 2026-11-15): r plays now and the track playing goes
+ * next, the queue after it as it was. r goes in after the playing track (Play Next's insert, which
+ * in advanced play puts the new row first in the pending list), the two rows swap, and the queue
+ * starts at the playing row's index, now r's; the pending list's first, after the swap, is the old
+ * track. Its place is kept by the resume ring. Returns 0, nothing done, without a local queue
+ * playing or paused (the caller plays r's album as before). */
+int playback_play_now(void *r) {
+    void *q = queue();
+    unsigned pos = (unsigned)M(MCL_POS);
+    int status = mclGetPlayStatus();
+    if (!r || !local_queue() || (status != 2 && status != 3)) return 0;
+    const char *path = P(r, REC_PATH), *now = P(deque_at(q, pos), REC_PATH);
+    if (path && now && !strcmp(path, now)) return 1; /* playing already: Now Playing, as it is */
+    void *add = _create_deque("stSongInfo");
+    if (!add) return 0;
+    deque_init(add);
+    _deque_push_back(add, r);
+    unsigned at = playback_queue_insert(q, add, 1);
+    deque_destroy(add);
+    if (at != pos + 1 || at >= deque_size(q)) return 0;
+    reverse_rows(q, pos, pos + 2);
+    if (s.active && ids && at < s.n) { /* the rows' identities swap with them (follow_queue) */
+        unsigned t = ids[pos];
+        ids[pos] = ids[at], ids[at] = t;
+    }
+    s.dirty = 1;
+    press_stamp();
+    player_start_queue((int)pos);
+    playback_save();
+    return 1;
+}
+
+/* Takes the queue's row at `at` out (a file deleted: podcast.c), never the playing one: stock's
+ * toolsClearDeqItem, as its own Delete Song, then every index after it moves down, as
+ * playback_queue_insert moves them up; advanced play follows the shorter queue (follow_queue).
+ * Returns 0 when nothing goes. */
+int playback_drop(unsigned at) {
+    void *q = queue();
+    unsigned pos = (unsigned)M(MCL_POS);
+    if (!q || at >= deque_size(q) || at == pos) return 0;
+    close_preload();
+    toolsClearDeqItem(q, (int)at);
+    if (at < pos) M(MCL_POS) = (int)pos - 1;
+    void *pool = P(MCL_POOL, 0); /* stock Shuffle's unplayed indices; at's own stays, harmless */
+    for (unsigned i = pool ? deque_size(pool) : 0; i-- > 0;) {
+        int *index = deque_at(pool, i);
+        if ((unsigned)*index > at) *index -= 1;
+    }
+    if (M(MCL_LASTPOS) != -1 && (unsigned)M(MCL_LASTPOS) >= at)
+        M(MCL_LASTPOS) = (unsigned)M(MCL_LASTPOS) == at ? -1 : M(MCL_LASTPOS) - 1;
+    if (back_to && (unsigned)back_to - 1 >= at) back_to = (unsigned)back_to - 1 == at ? 0 : back_to - 1;
+    s.next_valid = 0;
+    s.dirty = 1;
+    follow_queue();
     playback_save();
     return 1;
 }
