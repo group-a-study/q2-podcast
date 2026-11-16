@@ -1,0 +1,20 @@
+name: Firmware release
+# A push to this branch publishes its update.tar as the latest release, which Network Update fetches.
+# podcast-release.sh builds it locally: the stock ZIP it patches isn't public.
+on:
+  push:
+    branches: [firmware]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sha256sum -c SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$(cat TAG)" update.tar SHA256SUMS
+          -R "$GITHUB_REPOSITORY" --target "$(cat SOURCE)" --latest
+          --title "Q2 Podcast $(cat TAG)" --notes-file NOTES.md
