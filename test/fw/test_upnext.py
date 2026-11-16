@@ -195,22 +195,24 @@ def test_a_tapped_row_opens_its_menu_whose_play_now_plays_it(fw, up):
     assert title(queue.name(at)) == caption
 
 
-def test_a_hold_makes_its_row_s_track_play_next_and_takes_the_rows_again_with_it_first(fw, up):
+def test_a_hold_plays_its_row_now_and_takes_the_rows_again(fw, up):
+    """A Play/Pause hold on a row, as a long press on it (the user's, 2026-11-16: it played next before): its episode
+    plays now (playback_play_swap: the one playing goes first in Up Next), the rows taken again, the first selected."""
     queue, page = up
     page.open()
     before = page.captions
     assert page.hold(4) == 0
-    assert page.captions == [before[4]] + before[:4] + before[5:] and page.selected() == (0, len(before))
-    assert page.toasts == [] and [title(n) for n in queue.played(2)] == [before[4], before[0]]  # as it plays
+    (at, *_), = [a for _, a in fw.calls('player_start_queue')]
+    assert title(queue.name(at)) == before[4] and page.toasts == [] and page.selected()[0] == 0
 
 
-def test_a_hold_on_the_row_already_next_keeps_the_order(fw, up):
+def test_a_hold_on_the_row_next_plays_it_now(fw, up):
     queue, page = up
     page.open()
     before = page.captions
     page.hold(0)
-    assert page.captions == before and page.toasts == [] and page.selected() == (0, len(before))
-    assert [title(n) for n in queue.played(len(before))] == before
+    (at, *_), = [a for _, a in fw.calls('player_start_queue')]
+    assert title(queue.name(at)) == before[0] and page.toasts == []
 
 
 def test_a_hold_after_the_queue_changed_under_the_page_says_so_and_moves_nothing(fw, up, low):
@@ -313,3 +315,44 @@ def test_a_row_s_menu_moves_its_episode_and_takes_it_out_of_the_queue(fw, up):
     page.tap(3)
     page.run()
     assert page.toasts[-1] == 'Queue changed'
+
+
+def test_a_long_press_on_a_row_plays_it_now_and_its_release_opens_no_menu(fw, up):
+    """A finger held on an Up Next row HOLD_PLAY_MS, unmoved (the user's, 2026-11-16): its episode plays now and the
+    one playing goes first in Up Next, while the finger is still there; its release is no tap (no menu), and the rows
+    are taken again once it has gone. A finger lifted sooner, or a drag (the row's abort), plays nothing."""
+    queue, page = up
+    queue.mcl.type = 0xf001  # a library queue: a local one, which Play Now reorders
+    page.open()
+    before, now, down = page.captions, [1000], [1]
+    fw.mock('time_now_ms', lambda *_: now[0])
+    fw.mock('window_manager_get_pointer_pressed', lambda *_: down[0])
+    handlers = {}
+    for _, a in fw.calls('widget_on'):
+        handlers[a[0], a[1]] = (a[2], a[3])
+    on = lambda row, kind: C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)(handlers[page.items[row], kind][0])(handlers[page.items[row], kind][1], None)
+    poll = fw.fn('podcast__hold_poll', None, C.c_uint)
+    on(3, 0xff)  # a finger on the fourth row
+    now[0] += 300
+    poll(now[0])
+    on(3, 0x107)  # a drag: aborted
+    now[0] += 400
+    poll(now[0])
+    assert not fw.calls('player_start_queue')
+    on(2, 0xff)
+    now[0] += 599
+    poll(now[0])
+    assert not fw.calls('player_start_queue')
+    now[0] += 1
+    poll(now[0])
+    (at, *_), = [a for _, a in fw.calls('player_start_queue')]
+    assert title(queue.name(at)) == before[2]
+    windows, lists = len(fw.calls('window_create')), len(fw.calls('scroll_view_create'))
+    assert page.tap(2) == 0 and len(fw.calls('window_create')) == windows  # the release: no menu
+    poll(now[0])
+    assert len(fw.calls('scroll_view_create')) == lists  # not under the finger
+    down[0] = 0
+    poll(now[0])  # the finger gone: the rows taken again
+    assert len(fw.calls('scroll_view_create')) == lists + 1
+    page.tap(2)  # a tap now is a tap: its menu
+    assert len(fw.calls('window_create')) == windows + 1 and page.captions[0] == 'Play Now'

@@ -1502,12 +1502,79 @@ static void *queue_lead(void) {
     return queue_now(&at, &n);
 }
 
+/* ---- A long press on a Queue row (the user's, 2026-11-16): Play Now ---- */
+
+#define HOLD_PLAY_MS 600 /* a finger this long on an Up Next row, unmoved, plays it now */
+static struct {
+    unsigned at, hash, since; /* the row's queue index, queue_hash then, and when the finger came */
+    int armed, fired; /* a finger there, unmoved; the press played it (its click is not a tap) */
+    int again;        /* the Queue pages to build again once the finger has gone */
+} hp;
+
+static int hold_down(void *ctx, void *event) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    (void)event;
+    hp.at = (unsigned)(long)ctx, hp.hash = q ? queue_hash(q) : 0;
+    hp.since = (unsigned)time_now_ms(), hp.armed = 1, hp.fired = 0;
+    return 0;
+}
+/* the finger up, or gone on a drag (the list's scroll or the pages' swipe sends its row an abort)
+ */
+static int hold_off(void *ctx, void *event) {
+    (void)ctx, (void)event;
+    hp.armed = 0;
+    return 0;
+}
+
+/* An Up Next row (queue index at; Now Playing's Queue page, View Queue) plays on a long press. */
+void podcast_row_hold(void *item, unsigned at) {
+    widget_on(item, EVT_POINTER_FIRST, hold_down, (void *)(long)at);
+    widget_on(item, EVT_POINTER_UP, hold_off, 0);
+    widget_on(item, EVT_POINTER_ABORT, hold_off, 0);
+}
+
+/* Whether a row's click is the end of a long press that played it, not a tap; asked once. */
+int podcast_row_held(void) {
+    int fired = hp.fired;
+    hp.fired = 0;
+    return fired;
+}
+
+/* The row's episode plays now and the one playing goes first in Up Next (playback_play_swap; a
+ * queue it can't reorder plays the row as stock does), as the menu's Play Now; the queue changed
+ * since the finger came does nothing. The rows are built again once the finger has gone, not under
+ * it. */
+static void play_row(unsigned at) {
+    void *q = P(mcl_pdeqplaylist, 0);
+    if (!q || queue_hash(q) != hp.hash || at >= deque_size(q) || at == (unsigned)MCL(MCL_POS))
+        return;
+    int start = playback_play_swap(at);
+    if (start < 0) start = (int)at;
+    press_stamp();
+    player_start_queue(start);
+    hp.again = 1;
+}
+
+/* Every UI pass: a finger held HOLD_PLAY_MS on a row plays it. */
+static void hold_poll(unsigned now) {
+    if (hp.again && !pointer_down()) hp.again = 0, pc.q_sig = 0, up_next_again();
+    if (!hp.armed) return;
+    if (!pointer_down()) {
+        hp.armed = 0;
+        return;
+    }
+    if (now - hp.since < HOLD_PLAY_MS) return;
+    hp.armed = 0, hp.fired = 1;
+    play_row(hp.at);
+}
+
 /* The Queue page's tap on a row (ctx: its place, 0 the playing one): an Up Next row's opens its
  * menu (podcast_row_menu: Play Now first; the user's, 2026-11-16: a tap no longer plays it); the
  * playing one's goes back to the art. */
 static int queue_tap(void *ctx, void *event) {
     int k = (int)(long)ctx;
     (void)event;
+    if (podcast_row_held()) return 0;
     if (!k) {
         if (pc.slide) widget_set_prop_int(pc.slide, "value", 0);
         return 0;
@@ -1531,6 +1598,7 @@ static unsigned queue_sign(unsigned *idx, unsigned *n) {
  * podcast_row. Built again when the queue, its order or the playing track changes (its scroll
  * kept), and once more EP_RETRY_MS on while a row lacked the library's title. */
 static void queue_show(unsigned now) {
+    if (hp.again) return; /* a long press played a row: built again once the finger has gone */
     unsigned idx[QUEUE_ROWS], n, sig = queue_sign(idx, &n);
     if (pc.q_again && now - pc.q_again < 0x80000000u) pc.q_again = 0, pc.q_sig = 0;
     if (sig == pc.q_sig) return;
@@ -1551,8 +1619,9 @@ static void queue_show(unsigned now) {
         if (!r) continue;
         ep_t *e = ep_of(r);
         missing |= !e || !e->title;
-        widget_on(podcast_row(view, y, w, Q_ROW_H, r, (int)i + 1), EVT_CLICK, queue_tap,
-                  (void *)(long)(i + 1));
+        void *item = podcast_row(view, y, w, Q_ROW_H, r, (int)i + 1);
+        widget_on(item, EVT_CLICK, queue_tap, (void *)(long)(i + 1));
+        podcast_row_hold(item, idx[i]);
         y += Q_ROW_H;
     }
     ep_batch(0);
@@ -1738,6 +1807,7 @@ void podcast_poll(void) {
     unsigned now = (unsigned)time_now_ms(), at, n;
     wheel_poll(front);
     glide_step(front);
+    hold_poll((unsigned)time_now_ms());
     if (pc.win) { /* every pass: a swipe's arrival is caught within ARRIVE_MS, not a POLL_MS later
                    */
         if (front != pc.front) pc.front = front, pc.front_at = now, pc.desc_moved = 0;

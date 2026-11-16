@@ -13775,11 +13775,11 @@ m.close(); m.calls=[]; m.rescan(); m.calls=[]
 assert m.call(address=f,args=(ctx,m.event,0,0),gap=0,count=50_000_000)==0 and called('getAllMusic')
 m.page=m.top; assert m.texts()==['Most Played']+[x for p in zip(ranked[:3],details[:3]) for x in p]; passed()
 
-# View Queue on a shuffle (Now Playing's hold menu, Up Next's list): a Play/Pause hold on a row plays its track
-# next, a move, not Play Next's copy, the queue as it was; the rows are taken again with the pick first in Up Next, the
-# selection there, with no menu, toast or play/pause. A row already next stays there; playback is not touched; once
-# the queue changes under the page a hold says so and takes the rows again from the live queue. Q2 Podcast's View
-# Queue (the user's, 2026-11-15): "Queue", the playing episode's row first, then each episode's title over its show.
+# View Queue on a shuffle (Now Playing's hold menu, Up Next's list): a Play/Pause hold on a row plays it now (Q2
+# Podcast, the user's, 2026-11-16, as a long press on it: it played next before), the queue as it was, with no menu
+# or toast; the rows are taken again, the selection on the first. Once the queue changes under the page a hold says so
+# and takes the rows again from the live queue. Q2 Podcast's View Queue (the user's, 2026-11-15): "Queue", the
+# playing episode's row first, then each episode's title over its show.
 def un_rows(m):
     """View Queue's Up Next titles, and whether the playing episode's row leads (its show says Now Playing)."""
     t=m.texts()[1:]; lead=len(t)>1 and (t[1] or '').startswith('Now Playing')
@@ -13793,16 +13793,13 @@ up,lead=un_rows(m); assert len(up)==4 and 'B' not in up and m.texts()[0]=='Queue
 view=m.find('scroll_view'); m.paint(view)
 for _ in range(lead+1): m.call()
 assert m.selected(view)==lead+1  # Up Next's second
-m.press(20); assert m.hold()==11 and m.release()==0 and not m.toasts
-want=[up[1],up[0]]+up[2:]; assert un_rows(m)[0]==want and m.names()==list('ABCDE') and m.mcl('MCL_POS')==1
-view=m.find('scroll_view'); assert m.selected(view)==lead and not m.playback() and m.top==m.page
-m.paint(view); m.call(O['KEY_NEXT']); assert m.selected(view)==lead+1
-m.call(O['KEY_PREV']); assert m.selected(view)==lead
-toasts=len(m.toasts); m.press(30); assert m.hold()==11 and m.release()==0 and len(m.toasts)==toasts
-assert un_rows(m)[0]==want and m.names()==list('ABCDE')
-m.deqs[q][1][4]=m.song('F'); m.call(O['KEY_NEXT']); toasts=len(m.toasts)
-m.press(40); assert m.hold()==11 and m.release()==0 and len(m.toasts)==toasts+1 and m.toasts[-1][3]=='Queue changed'
-fresh=un_rows(m)[0]; assert fresh[0]==up[1] and 'F' in fresh and 'E' not in fresh and m.selected(m.find('scroll_view'))==lead
+m.press(20); assert m.hold()==11; starts=[c[1] for c in m.calls if c[0]=='player_start_queue']
+assert m.release()==0 and not m.toasts
+assert m.names()==list('ABCDE') and [m.names()[i] for i in starts]==[up[1]],(starts,sorted({c[0] for c in m.calls}))
+view=m.find('scroll_view'); assert m.selected(view)==0 and m.top==m.page
+m.deqs[q][1][4]=m.song('F'); toasts=len(m.toasts)
+m.paint(view); m.call(O['KEY_NEXT']); m.press(40); assert m.hold()==11 and m.release()==0
+assert len(m.toasts)==toasts+1 and m.toasts[-1][3]=='Queue changed' and 'F' in un_rows(m)[0]
 m.close(); passed()
 
 # Ratings (ratings.c rate_*): 5 hearts are stock's My Fav, 1-4 kept in /mnt/data/ringnav-ratings by listen_key with

@@ -597,6 +597,8 @@ int podcast_delfin(void *r);
 void podcast_delfin_set(void *r, int on);
 void *podcast_row(void *view, int y, int w, int h, void *r, int lead);
 void podcast_row_menu(unsigned at);
+void podcast_row_hold(void *item, unsigned at);
+int podcast_row_held(void);
 int spoken(const char *path);
 void np_seek(int to);
 int np_second(void);

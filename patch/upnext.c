@@ -14,6 +14,8 @@
 unsigned queue_hash(void *q);                              /* navigation.c */
 void *podcast_row(void *view, int y, int w, int h, void *r, int lead);
 void podcast_row_menu(unsigned at);                        /* podcast.c */
+void podcast_row_hold(void *item, unsigned at);            /* podcast.c */
+int podcast_row_held(void);                                /* podcast.c */
 int media_owner(void);                                     /* headset.c */
 static struct {
     void *page;                 /* the page, one at a time */
@@ -47,8 +49,9 @@ static void un_fill(int sel) {
     if (lead) widget_on(podcast_row(view, 0, 375, h, lead, 0), EVT_CLICK, un_play, (void *)0);
     for (unsigned i = 0; i < un.n; i++) {
         unsigned row = i + un.lead;
-        widget_on(podcast_row(view, (int)row * h, 375, h, deque_at(q, un.idx[i]), (int)i + 1),
-                  EVT_CLICK, un_play, (void *)(long)row);
+        void *item = podcast_row(view, (int)row * h, 375, h, deque_at(q, un.idx[i]), (int)i + 1);
+        widget_on(item, EVT_CLICK, un_play, (void *)(long)row);
+        podcast_row_hold(item, un.idx[i]);
     }
     if (sel >= 0 && rows) ringnav_select(view, sel < rows ? sel : rows - 1, rows);
 }
@@ -67,6 +70,7 @@ static int un_play(void *ctx, void *event) {
     unsigned row = (unsigned)(long)ctx, k = row - un.lead;
     void *q = P(mcl_pdeqplaylist, 0);
     (void)event;
+    if (podcast_row_held()) return 0; /* a long press played it (podcast.c) */
     if (un.lead && !row) {
         navigator_back();
         playback_np();
@@ -103,19 +107,25 @@ void up_next(int (*keyup)(void *, void *)) {
     if (un.page || !(un.page = page_open("upnext_page", un_closed, keyup))) return;
     un_fill(-1);
 }
-/* A Play/Pause hold on a row (un_hold, deferred out of its dispatch): the row's episode plays next
- * (playback_move) and the rows are taken again with it first in Up Next, the selection there. A
- * row already next stays there. A queue changed under the page, or a row no longer up next (played
- * since), takes the rows again and says "Queue changed"; the playing row, a page gone or a row out
- * of range does nothing. */
+/* A Play/Pause hold on a row (un_hold, deferred out of its dispatch), as a long press on it (the
+ * user's, 2026-11-16): the row's episode plays now and the one playing goes first in Up Next
+ * (playback_play_swap; a queue it can't reorder plays the row as stock does), and the rows are
+ * taken again, the selection on the first. A queue changed under the page, or a row no longer up
+ * next (played since), takes the rows again and says "Queue changed"; the playing row, a page gone
+ * or a row out of range does nothing. */
 static int un_move(const void *unused) {
     unsigned row = un.row, up[UP_NEXT_ROWS], n = playback_queue_rows(up, UP_NEXT_ROWS), i = 0;
     void *q = P(mcl_pdeqplaylist, 0);
     if (!un.page || row < un.lead || row - un.lead >= un.n || !q) return 0;
     unsigned at = un.idx[row - un.lead];
     while (i < n && up[i] != at) ++i;
-    int stale = queue_hash(q) != un.hash || i == n || (i && playback_move(at) < 0);
-    un_fill((int)un.lead);
+    int stale = queue_hash(q) != un.hash || i == n;
+    if (!stale) {
+        int start = playback_play_swap(at);
+        press_stamp();
+        player_start_queue(start < 0 ? (int)at : start);
+    }
+    un_fill(0);
     if (stale) toast("Queue changed");
     return 0;
 }

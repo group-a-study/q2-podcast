@@ -55,6 +55,7 @@
 #define EVT_POINTER_MOVE_BEFORE 0x102 /* wm move-before forwards this type to the down hook @0x523ed4 */
 #define EVT_POINTER_UP_BEFORE 0x104
 #define EVT_POINTER_ABORT 0x107
+#define EVT_POINTER_UP 0x103 /* a widget's pointer up, as EVT_POINTER_FIRST its down */
 #define EVT_DESTROY 0x0c
 #define EVT_KEY_DOWN 0x110        /* widget_on_keydown @0x6627c4 (0x111 is its long press) */
 #define EVT_KEY_DOWN_BEFORE 0x112 /* wm keydown-before dispatch @0x523e6c */
